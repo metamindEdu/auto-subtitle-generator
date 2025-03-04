@@ -1,0 +1,14 @@
+--find-links https://download.pytorch.org/whl/cu121
+torch>=2.0.0
+openai-whisper
+numpy==2.1.0
+openai
+anthropic
+pysrt
+tqdm
+python-dotenv
+soundfile
+webrtcvad
+pydub
+streamlit>=1.30.0
+ffmpeg-python>=0.2.0
