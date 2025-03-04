@@ -1,5 +1,6 @@
-# 자동 자막 생성기 (auto-subtitle-generator)
-음성/영상 파일에서 자동으로 자막을 생성하는 파이썬 기반 AI 프로그램으로, LLM을 활용한 영상 컨텍스트 입력 및 자막 교정 기능을 제공합니다.
+# 자동 자막 생성기 (Auto Video Subtitles)
+
+음성 또는 영상 파일에서 자동으로 자막을 생성하고, 선택적으로 LLM(대규모 언어 모델)을 사용하여 자막을 교정하는 도구입니다.
 
 ![자동 자막 생성기 스크린샷](./screenshot.png)
 
@@ -8,9 +9,20 @@
 - **다양한 형식 지원**: mp3, wav, mp4, avi, mov, mkv 등 다양한 오디오/비디오 파일 형식 지원
 - **다국어 지원**: 한국어, 영어, 일본어, 중국어 등 자동 언어 감지 및 지정 기능
 - **AI 교정**: OpenAI 또는 Anthropic Claude API를 활용한 자막 교정 기능
-- **VAD(Voice Activity Detection)**: 음성이 있는 부분만 감지하여 처리하는 기능
+- **VAD(Voice Activity Detection)**: 음성이 있는 부분만 감지하여 처리하는 기능 (선택적). OpenAI Whisper 모델의 잘 알려진 버그로 인해 음성 공백 구간이 긴 영상 및 음성 파일을 처리할 때 특히 유용
 - **자막 미리보기**: 생성된 자막을 웹 인터페이스에서 바로 확인
 - **다운로드 지원**: SRT 및 VTT 형식으로 자막 다운로드
+
+## 시스템 요구사항
+
+- **운영체제**: Windows, macOS, 또는 Linux
+- **Python**: 3.8 이상 (3.10 권장, 3.13에서는 일부 호환성 문제가 있을 수 있음)
+- **디스크 공간**: 최소 2GB (Whisper 모델 크기에 따라 증가할 수 있음)
+- **RAM**: 최소 4GB (large 모델 사용 시 8GB 이상 권장)
+- **선택적 요구사항**:
+  - **Microsoft Visual C++ 빌드 도구**: webrtcvad 모듈 사용 시 필요 (자동 설치 지원)
+  - **FFmpeg**: 오디오/비디오 처리에 필요 (자동 설치 지원)
+- **인터넷 연결**: 초기 설치 및 LLM API 사용 시 필요
 
 ## 설치 방법
 
@@ -20,9 +32,10 @@
 2. `1. install_windows.ps1` 파일을 실행합니다.
    - PowerShell에서 실행 정책 제한이 있는 경우: `powershell -ExecutionPolicy Bypass -File "1. install_windows.ps1"`
 3. 화면의 지시에 따라 설치를 진행합니다.
-   - 파이썬이 설치되어 있지 않은 경우 자동으로 설치할 수 있습니다.
-   - 필요한 라이브러리가 자동으로 설치됩니다.
+   - 파이썬이 설치되어 있지 않은 경우 자동으로 Python 3.10을 설치할 수 있습니다.
+   - Microsoft Visual C++ 빌드 도구가 없는 경우 자동으로 설치하거나 이 기능을 건너뛸 수 있습니다.
    - FFmpeg도 선택적으로 자동 설치할 수 있습니다.
+   - 필요한 라이브러리가 자동으로 설치됩니다.
 
 ### macOS/Linux
 
@@ -77,15 +90,7 @@ ANTHROPIC_API_KEY=your_anthropic_api_key_here
 - **자막 언어**: 자동 감지 또는 한국어, 영어, 일본어, 중국어 중 선택
 - **최대/최소 글자 수**: 한 자막당 표시할 최대/최소 글자 수
 - **최대 시간**: 한 자막당 최대 지속 시간 (초)
-- **VAD(Voice Activity Detection)**: 음성이 있는 부분만 감지하여 처리 (긴 파일에 유용)
-
-## 시스템 요구사항
-
-- **운영체제**: Windows, macOS, 또는 Linux
-- **Python**: 3.8 이상 (3.10 권장)
-- **디스크 공간**: 최소 2GB (Whisper 모델 크기에 따라 증가할 수 있음)
-- **RAM**: 최소 4GB (large 모델 사용 시 8GB 이상 권장)
-- **인터넷 연결**: 초기 설치 및 LLM API 사용 시 필요
+- **VAD(Voice Activity Detection)**: 음성이 있는 부분만 감지하여 처리 (선택적 기능, Visual C++ 빌드 도구 필요). OpenAI Whisper 모델의 잘 알려진 버그로 인해 음성 공백 구간이 긴 영상 및 음성 파일을 처리할 때 특히 중요
 
 ## 문제 해결
 
@@ -99,14 +104,22 @@ ANTHROPIC_API_KEY=your_anthropic_api_key_here
    - 방화벽이나 프록시가 설치를 차단하지 않는지 확인하세요.
    - 관리자 권한으로 실행해보세요.
 
-3. **CUDA 관련 오류**
+3. **"error: Microsoft Visual C++ 14.0 or greater is required"**
+   - Microsoft Visual C++ 빌드 도구가 필요합니다. 설치 스크립트를 다시 실행하여 자동으로 설치하거나, 수동으로 설치하세요.
+   - 또는 VAD 기능 사용을 포기하고 webrtcvad 모듈 없이 계속 진행할 수 있습니다.
+
+4. **CUDA 관련 오류**
    - 리눅스에서 CUDA 오류가 발생할 경우: `pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu` 명령으로 CPU 버전의 PyTorch를 설치하세요.
 
-4. **웹브라우저가 자동으로 열리지 않는 경우**
+5. **웹브라우저가 자동으로 열리지 않는 경우**
    - 브라우저를 수동으로 열고 `http://localhost:8501` 주소로 접속하세요.
 
-5. **"Module not found" 오류**
+6. **"Module not found" 오류**
    - 프로그램 폴더로 이동하여 설치 스크립트를 다시 실행하세요.
+
+7. **Python 3.13 호환성 문제**
+   - Python 3.13에서 일부 패키지와 호환성 문제가 발생할 수 있습니다.
+   - Python 3.10으로 다운그레이드하거나, 가상환경에 Python 3.10을 사용하는 것을 권장합니다.
 
 ### LLM 교정 관련 문제
 
@@ -123,6 +136,7 @@ ANTHROPIC_API_KEY=your_anthropic_api_key_here
 - 매우 긴 오디오 파일(1시간 이상)은 처리에 시간이 많이 소요될 수 있습니다.
 - LLM 교정 사용 시 API 사용 비용이 발생할 수 있습니다.
 - Whisper 모델은 첫 실행 시 다운로드되므로 인터넷 연결이 필요합니다.
+- VAD 기능은 선택적이지만, 음성 공백 구간이 긴 영상이나 음성 파일을 처리할 때 매우 중요합니다. OpenAI Whisper 모델은 긴 무음 구간에서 오작동하는 알려진 버그가 있어 VAD가 이 문제를 해결합니다. 하지만 Microsoft Visual C++ 빌드 도구 없이도 기본 자막 생성 기능은 사용할 수 있습니다.
 
 ## 라이센스
 

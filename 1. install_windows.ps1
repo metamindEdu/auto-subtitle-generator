@@ -21,6 +21,7 @@ $pythonInstalled = $false
 $venvExists = $false
 $packagesInstalled = $false
 $ffmpegInstalled = $false
+$vsToolsInstalled = $false
 
 Write-Host "시스템 환경을 확인하는 중..." -ForegroundColor Yellow
 
@@ -41,6 +42,42 @@ if (Test-Path -Path "venv") {
     $venvExists = $true
 } else {
     Write-Host "✗ 가상환경이 설정되어 있지 않습니다." -ForegroundColor Red
+}
+
+# Microsoft Visual C++ 빌드 도구 확인
+$vsInstallPath = $null
+
+# VS 설치 위치 확인 방법 1 - vswhere 사용
+try {
+    if (Test-Path "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe") {
+        $vsInstallPath = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+    }
+} catch {
+    # 오류 무시
+}
+
+# VS 설치 위치 확인 방법 2 - 일반적인 경로 확인
+if (-not $vsInstallPath) {
+    $possiblePaths = @(
+        "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2022\BuildTools",
+        "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2022\Community",
+        "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2019\BuildTools",
+        "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2019\Community"
+    )
+    
+    foreach ($path in $possiblePaths) {
+        if (Test-Path $path) {
+            $vsInstallPath = $path
+            break
+        }
+    }
+}
+
+if ($vsInstallPath) {
+    Write-Host "✓ Microsoft Visual C++ 빌드 도구가 설치되어 있습니다." -ForegroundColor Green
+    $vsToolsInstalled = $true
+} else {
+    Write-Host "✗ Microsoft Visual C++ 빌드 도구가 설치되어 있지 않습니다." -ForegroundColor Red
 }
 
 # FFmpeg 확인
@@ -92,6 +129,12 @@ if ($packagesInstalled) {
     Write-Host "? 패키지: 상태 확인 불가" -ForegroundColor Yellow
 }
 
+if ($vsToolsInstalled) {
+    Write-Host "✓ Visual C++ 빌드 도구: 설치됨" -ForegroundColor Green
+} else {
+    Write-Host "✗ Visual C++ 빌드 도구: 설치되지 않음" -ForegroundColor Red
+}
+
 if ($ffmpegInstalled) {
     Write-Host "✓ FFmpeg: 설치됨" -ForegroundColor Green
 } else {
@@ -101,7 +144,7 @@ Write-Host "---------------------------------------------------"
 Write-Host ""
 
 # 모든 필요 조건이 충족되었는지 확인
-if ($pythonInstalled -and $venvExists -and $packagesInstalled -and $ffmpegInstalled) {
+if ($pythonInstalled -and $venvExists -and $packagesInstalled -and $ffmpegInstalled -and $vsToolsInstalled) {
     Write-Host "모든 필요 조건이 이미 설치되어 있습니다!" -ForegroundColor Green
     Write-Host "프로그램을 바로 실행할 수 있습니다." -ForegroundColor Green
     
@@ -170,6 +213,58 @@ if (-not $pythonInstalled) {
     }
 }
 
+# Microsoft Visual C++ 빌드 도구 설치 (필요한 경우)
+if (-not $vsToolsInstalled) {
+    Write-Host "Microsoft Visual C++ 빌드 도구가 설치되어 있지 않습니다." -ForegroundColor Yellow
+    $installVSTools = Read-Host "Microsoft Visual C++ 빌드 도구를 자동으로 설치하시겠습니까? (Y/N)"
+    
+    if ($installVSTools -eq "Y" -or $installVSTools -eq "y") {
+        Write-Host "Microsoft Visual C++ 빌드 도구를 다운로드하고 설치합니다..." -ForegroundColor Yellow
+        
+        # 임시 디렉토리 생성
+        if (-not (Test-Path -Path "temp")) {
+            New-Item -Path "temp" -ItemType Directory | Out-Null
+        }
+        
+        # Visual Studio 설치 프로그램 다운로드
+        Write-Host "Visual Studio 설치 프로그램 다운로드 중..." -ForegroundColor Yellow
+        $vsInstallerUrl = "https://aka.ms/vs/17/release/vs_buildtools.exe"
+        try {
+            Invoke-WebRequest -Uri $vsInstallerUrl -OutFile "temp\vs_buildtools.exe"
+        } catch {
+            Write-Host "Visual Studio 설치 프로그램 다운로드에 실패했습니다." -ForegroundColor Red
+            Write-Host "수동으로 설치해주세요: https://visualstudio.microsoft.com/visual-cpp-build-tools/" -ForegroundColor Red
+            
+            $proceedWithoutVSTools = Read-Host "Visual C++ 빌드 도구 없이 계속 진행하시겠습니까? (webrtcvad 모듈을 사용할 수 없음) (Y/N)"
+            if ($proceedWithoutVSTools -ne "Y" -and $proceedWithoutVSTools -ne "y") {
+                Read-Host "아무 키나 눌러 종료하세요..."
+                exit
+            }
+        }
+        
+        # 설치 진행
+        if (Test-Path "temp\vs_buildtools.exe") {
+            Write-Host "Visual Studio 빌드 도구 설치 중... (새 창이 열릴 수 있습니다)" -ForegroundColor Yellow
+            Write-Host "설치 중에는 'C++을 사용한 데스크톱 개발' 워크로드를 선택해주세요." -ForegroundColor Yellow
+            
+            # Visual Studio Build Tools 설치 (C++ 빌드 도구)
+            Start-Process -FilePath "temp\vs_buildtools.exe" -ArgumentList "--add Microsoft.VisualStudio.Workload.VCTools --includeRecommended --passive --wait" -Wait
+            
+            Write-Host "Visual Studio 빌드 도구 설치가 완료되었습니다." -ForegroundColor Green
+            $vsToolsInstalled = $true
+        }
+    } else {
+        Write-Host "Visual C++ 빌드 도구 설치를 건너뜁니다." -ForegroundColor Yellow
+        Write-Host "webrtcvad 모듈을 사용하려면 Visual C++ 빌드 도구가 필요합니다." -ForegroundColor Yellow
+        
+        $proceedWithoutVSTools = Read-Host "Visual C++ 빌드 도구 없이 계속 진행하시겠습니까? (webrtcvad 모듈을 사용할 수 없음) (Y/N)"
+        if ($proceedWithoutVSTools -ne "Y" -and $proceedWithoutVSTools -ne "y") {
+            Read-Host "아무 키나 눌러 종료하세요..."
+            exit
+        }
+    }
+}
+
 # 가상환경 생성 (필요한 경우)
 if (-not $venvExists) {
     Write-Host "가상환경을 생성합니다..." -ForegroundColor Yellow
@@ -219,20 +314,50 @@ if (-not $packagesInstalled) {
     
     # 필요한 패키지 설치
     Write-Host "필요한 패키지를 설치합니다..." -ForegroundColor Yellow
-    try {
-        & pip install -r requirements.txt
-        if ($LASTEXITCODE -eq 0) {
-            Write-Host "패키지 설치가 완료되었습니다." -ForegroundColor Green
-            "Packages installed on $(Get-Date)" | Out-File -FilePath "requirements_installed"
-        } else {
+    
+    # webrtcvad 설치 처리
+    if ($vsToolsInstalled) {
+        # Visual C++ 빌드 도구가 있는 경우 모든 패키지 설치
+        try {
+            & pip install -r requirements.txt
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host "모든 패키지 설치가 완료되었습니다." -ForegroundColor Green
+                "All packages installed on $(Get-Date)" | Out-File -FilePath "requirements_installed"
+            } else {
+                Write-Host "패키지 설치에 실패했습니다." -ForegroundColor Red
+                Read-Host "아무 키나 눌러 종료하세요..."
+                exit
+            }
+        } catch {
             Write-Host "패키지 설치에 실패했습니다." -ForegroundColor Red
             Read-Host "아무 키나 눌러 종료하세요..."
             exit
         }
-    } catch {
-        Write-Host "패키지 설치에 실패했습니다." -ForegroundColor Red
-        Read-Host "아무 키나 눌러 종료하세요..."
-        exit
+    } else {
+        # Visual C++ 빌드 도구가 없는 경우 webrtcvad를 제외하고 설치
+        Write-Host "Visual C++ 빌드 도구가 없어 webrtcvad를 제외하고 설치합니다." -ForegroundColor Yellow
+        try {
+            # requirements.txt 파일에서 webrtcvad를 제외한 패키지 목록 가져오기
+            $packages = Get-Content -Path "requirements.txt" | Where-Object { $_ -notmatch "webrtcvad" }
+            
+            # 패키지 설치
+            foreach ($package in $packages) {
+                if ($package.Trim() -ne "") {
+                    Write-Host "패키지 설치 중: $package" -ForegroundColor Yellow
+                    & pip install $package
+                }
+            }
+            
+            Write-Host "webrtcvad를 제외한 패키지 설치가 완료되었습니다." -ForegroundColor Green
+            "Packages installed without webrtcvad on $(Get-Date)" | Out-File -FilePath "requirements_installed"
+            
+            Write-Host "주의: VAD(Voice Activity Detection) 기능을 사용할 수 없습니다." -ForegroundColor Yellow
+            Write-Host "앱 실행 시 VAD 옵션을 비활성화해주세요." -ForegroundColor Yellow
+        } catch {
+            Write-Host "패키지 설치에 실패했습니다." -ForegroundColor Red
+            Read-Host "아무 키나 눌러 종료하세요..."
+            exit
+        }
     }
 }
 
