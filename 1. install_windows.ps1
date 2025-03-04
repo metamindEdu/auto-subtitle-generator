@@ -1,12 +1,37 @@
-﻿# PowerShell 실행 정책 확인 및 우회
-if ((Get-ExecutionPolicy) -ne 'Bypass') {
-    Write-Host "경고: PowerShell 실행 정책이 스크립트 실행을 제한할 수 있습니다." -ForegroundColor Yellow
-    Write-Host "이 스크립트를 실행하려면 다음 명령어로 PowerShell을 실행하세요:" -ForegroundColor Yellow
-    Write-Host "powershell -ExecutionPolicy Bypass -File install.ps1" -ForegroundColor Cyan
-    
-    $continue = Read-Host "계속 진행하시겠습니까? (Y/N)"
-    if ($continue -ne "Y") {
-        exit
+﻿# 관리자 권한으로 자기 자신을 다시 실행하는 스크립트
+param([switch]$Elevated, [string]$OriginalPath)
+
+function Test-Admin {
+    $currentUser = New-Object Security.Principal.WindowsPrincipal $([Security.Principal.WindowsIdentity]::GetCurrent())
+    $currentUser.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+# 관리자 권한으로 실행되지 않은 경우 스크립트를 다시 실행
+if ((Test-Admin) -eq $false) {
+    if ($elevated) {
+        Write-Host "관리자 권한으로 실행을 시도했으나 실패했습니다." -ForegroundColor Red
+    } else {
+        Write-Host "관리자 권한으로 스크립트를 다시 실행합니다..." -ForegroundColor Yellow
+        
+        # 현재 스크립트의 전체 경로 가져오기
+        $scriptPath = $MyInvocation.MyCommand.Definition
+        # 현재 작업 디렉토리 경로 저장
+        $currentPath = (Get-Location).Path
+        
+        # 관리자 권한으로 동일한 스크립트 실행 (현재 경로 전달)
+        Start-Process PowerShell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`" -Elevated -OriginalPath `"$currentPath`"" -Verb RunAs
+    }
+    exit
+}
+
+# 관리자 권한으로 실행 시 원래 디렉토리로 이동
+if ($OriginalPath) {
+    try {
+        Set-Location -Path $OriginalPath
+        Write-Host "작업 디렉토리를 '$OriginalPath'로 설정했습니다." -ForegroundColor Green
+    } catch {
+        Write-Host "작업 디렉토리 변경 중 오류가 발생했습니다: $_" -ForegroundColor Red
+        Write-Host "스크립트가 있는 디렉토리에서 실행하는 것이 좋습니다." -ForegroundColor Yellow
     }
 }
 
@@ -21,7 +46,6 @@ $pythonInstalled = $false
 $venvExists = $false
 $packagesInstalled = $false
 $ffmpegInstalled = $false
-$vsToolsInstalled = $false
 
 Write-Host "시스템 환경을 확인하는 중..." -ForegroundColor Yellow
 
@@ -42,42 +66,6 @@ if (Test-Path -Path "venv") {
     $venvExists = $true
 } else {
     Write-Host "✗ 가상환경이 설정되어 있지 않습니다." -ForegroundColor Red
-}
-
-# Microsoft Visual C++ 빌드 도구 확인
-$vsInstallPath = $null
-
-# VS 설치 위치 확인 방법 1 - vswhere 사용
-try {
-    if (Test-Path "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe") {
-        $vsInstallPath = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-    }
-} catch {
-    # 오류 무시
-}
-
-# VS 설치 위치 확인 방법 2 - 일반적인 경로 확인
-if (-not $vsInstallPath) {
-    $possiblePaths = @(
-        "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2022\BuildTools",
-        "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2022\Community",
-        "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2019\BuildTools",
-        "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2019\Community"
-    )
-    
-    foreach ($path in $possiblePaths) {
-        if (Test-Path $path) {
-            $vsInstallPath = $path
-            break
-        }
-    }
-}
-
-if ($vsInstallPath) {
-    Write-Host "✓ Microsoft Visual C++ 빌드 도구가 설치되어 있습니다." -ForegroundColor Green
-    $vsToolsInstalled = $true
-} else {
-    Write-Host "✗ Microsoft Visual C++ 빌드 도구가 설치되어 있지 않습니다." -ForegroundColor Red
 }
 
 # FFmpeg 확인
@@ -129,12 +117,6 @@ if ($packagesInstalled) {
     Write-Host "? 패키지: 상태 확인 불가" -ForegroundColor Yellow
 }
 
-if ($vsToolsInstalled) {
-    Write-Host "✓ Visual C++ 빌드 도구: 설치됨" -ForegroundColor Green
-} else {
-    Write-Host "✗ Visual C++ 빌드 도구: 설치되지 않음" -ForegroundColor Red
-}
-
 if ($ffmpegInstalled) {
     Write-Host "✓ FFmpeg: 설치됨" -ForegroundColor Green
 } else {
@@ -144,7 +126,7 @@ Write-Host "---------------------------------------------------"
 Write-Host ""
 
 # 모든 필요 조건이 충족되었는지 확인
-if ($pythonInstalled -and $venvExists -and $packagesInstalled -and $ffmpegInstalled -and $vsToolsInstalled) {
+if ($pythonInstalled -and $venvExists -and $packagesInstalled -and $ffmpegInstalled) {
     Write-Host "모든 필요 조건이 이미 설치되어 있습니다!" -ForegroundColor Green
     Write-Host "프로그램을 바로 실행할 수 있습니다." -ForegroundColor Green
     
@@ -160,109 +142,36 @@ if ($pythonInstalled -and $venvExists -and $packagesInstalled -and $ffmpegInstal
     }
 }
 
-# 추가 설치 여부 확인
-Write-Host "추가 설치가 필요합니다. 계속 진행하시겠습니까? (Y/N)" -ForegroundColor Yellow
-$proceedInstall = Read-Host
-if ($proceedInstall -ne "Y" -and $proceedInstall -ne "y") {
-    Write-Host "설치를 취소합니다." -ForegroundColor Red
-    Read-Host "아무 키나 눌러 종료하세요..."
-    exit
-}
-
-Write-Host ""
-
 # Python 설치 (필요한 경우)
 if (-not $pythonInstalled) {
     Write-Host "파이썬이 설치되어 있지 않습니다." -ForegroundColor Yellow
-    $installPython = Read-Host "자동으로 파이썬을 설치하시겠습니까? (Y/N)"
+    Write-Host "파이썬을 자동으로 설치합니다..." -ForegroundColor Yellow
     
-    if ($installPython -eq "Y" -or $installPython -eq "y") {
-        Write-Host "파이썬을 다운로드하고 설치합니다..." -ForegroundColor Yellow
-        
-        # 임시 디렉토리 생성
-        if (-not (Test-Path -Path "temp")) {
-            New-Item -Path "temp" -ItemType Directory | Out-Null
-        }
-        
-        # Python 설치 프로그램 다운로드
-        Write-Host "파이썬 설치 프로그램 다운로드 중..." -ForegroundColor Yellow
-        try {
-            Invoke-WebRequest -Uri "https://www.python.org/ftp/python/3.10.11/python-3.10.11-amd64.exe" -OutFile "temp\python_installer.exe"
-        } catch {
-            Write-Host "파이썬 설치 프로그램 다운로드에 실패했습니다." -ForegroundColor Red
-            Write-Host "수동으로 설치해주세요: https://www.python.org/downloads/" -ForegroundColor Red
-            Read-Host "아무 키나 눌러 종료하세요..."
-            exit
-        }
-        
-        Write-Host "파이썬 설치 중... (잠시 기다려 주세요)" -ForegroundColor Yellow
-        # 파이썬 설치 (자동 모드, PATH에 추가, pip 설치)
-        Start-Process -FilePath "temp\python_installer.exe" -ArgumentList "/quiet", "InstallAllUsers=1", "PrependPath=1", "Include_test=0", "Include_pip=1" -Wait
-        
-        Write-Host "파이썬 설치가 완료되었습니다!" -ForegroundColor Green
-        Write-Host "PowerShell을 재시작하여 환경 변수를 새로고침해야 합니다." -ForegroundColor Yellow
-        Write-Host "PowerShell을 재시작한 후 이 스크립트를 다시 실행해주세요." -ForegroundColor Yellow
-        Read-Host "아무 키나 눌러 종료하세요..."
-        exit
-    } else {
-        Write-Host "파이썬 설치를 건너뜁니다." -ForegroundColor Yellow
-        Write-Host "파이썬이 필요합니다. 수동으로 설치한 후 이 스크립트를 다시 실행해주세요." -ForegroundColor Yellow
-        Write-Host "https://www.python.org/downloads/" -ForegroundColor Cyan
+    # 임시 디렉토리 생성
+    if (-not (Test-Path -Path "temp")) {
+        New-Item -Path "temp" -ItemType Directory | Out-Null
+    }
+    
+    # Python 설치 프로그램 다운로드
+    Write-Host "파이썬 설치 프로그램 다운로드 중..." -ForegroundColor Yellow
+    try {
+        Invoke-WebRequest -Uri "https://www.python.org/ftp/python/3.10.11/python-3.10.11-amd64.exe" -OutFile "temp\python_installer.exe"
+    } catch {
+        Write-Host "파이썬 설치 프로그램 다운로드에 실패했습니다." -ForegroundColor Red
+        Write-Host "수동으로 설치해주세요: https://www.python.org/downloads/" -ForegroundColor Red
         Read-Host "아무 키나 눌러 종료하세요..."
         exit
     }
-}
-
-# Microsoft Visual C++ 빌드 도구 설치 (필요한 경우)
-if (-not $vsToolsInstalled) {
-    Write-Host "Microsoft Visual C++ 빌드 도구가 설치되어 있지 않습니다." -ForegroundColor Yellow
-    $installVSTools = Read-Host "Microsoft Visual C++ 빌드 도구를 자동으로 설치하시겠습니까? (Y/N)"
     
-    if ($installVSTools -eq "Y" -or $installVSTools -eq "y") {
-        Write-Host "Microsoft Visual C++ 빌드 도구를 다운로드하고 설치합니다..." -ForegroundColor Yellow
-        
-        # 임시 디렉토리 생성
-        if (-not (Test-Path -Path "temp")) {
-            New-Item -Path "temp" -ItemType Directory | Out-Null
-        }
-        
-        # Visual Studio 설치 프로그램 다운로드
-        Write-Host "Visual Studio 설치 프로그램 다운로드 중..." -ForegroundColor Yellow
-        $vsInstallerUrl = "https://aka.ms/vs/17/release/vs_buildtools.exe"
-        try {
-            Invoke-WebRequest -Uri $vsInstallerUrl -OutFile "temp\vs_buildtools.exe"
-        } catch {
-            Write-Host "Visual Studio 설치 프로그램 다운로드에 실패했습니다." -ForegroundColor Red
-            Write-Host "수동으로 설치해주세요: https://visualstudio.microsoft.com/visual-cpp-build-tools/" -ForegroundColor Red
-            
-            $proceedWithoutVSTools = Read-Host "Visual C++ 빌드 도구 없이 계속 진행하시겠습니까? (webrtcvad 모듈을 사용할 수 없음) (Y/N)"
-            if ($proceedWithoutVSTools -ne "Y" -and $proceedWithoutVSTools -ne "y") {
-                Read-Host "아무 키나 눌러 종료하세요..."
-                exit
-            }
-        }
-        
-        # 설치 진행
-        if (Test-Path "temp\vs_buildtools.exe") {
-            Write-Host "Visual Studio 빌드 도구 설치 중... (새 창이 열릴 수 있습니다)" -ForegroundColor Yellow
-            Write-Host "설치 중에는 'C++을 사용한 데스크톱 개발' 워크로드를 선택해주세요." -ForegroundColor Yellow
-            
-            # Visual Studio Build Tools 설치 (C++ 빌드 도구)
-            Start-Process -FilePath "temp\vs_buildtools.exe" -ArgumentList "--add Microsoft.VisualStudio.Workload.VCTools --includeRecommended --passive --wait" -Wait
-            
-            Write-Host "Visual Studio 빌드 도구 설치가 완료되었습니다." -ForegroundColor Green
-            $vsToolsInstalled = $true
-        }
-    } else {
-        Write-Host "Visual C++ 빌드 도구 설치를 건너뜁니다." -ForegroundColor Yellow
-        Write-Host "webrtcvad 모듈을 사용하려면 Visual C++ 빌드 도구가 필요합니다." -ForegroundColor Yellow
-        
-        $proceedWithoutVSTools = Read-Host "Visual C++ 빌드 도구 없이 계속 진행하시겠습니까? (webrtcvad 모듈을 사용할 수 없음) (Y/N)"
-        if ($proceedWithoutVSTools -ne "Y" -and $proceedWithoutVSTools -ne "y") {
-            Read-Host "아무 키나 눌러 종료하세요..."
-            exit
-        }
-    }
+    Write-Host "파이썬 설치 중... (잠시 기다려 주세요)" -ForegroundColor Yellow
+    # 파이썬 설치 (자동 모드, PATH에 추가, pip 설치)
+    Start-Process -FilePath "temp\python_installer.exe" -ArgumentList "/quiet", "InstallAllUsers=1", "PrependPath=1", "Include_test=0", "Include_pip=1" -Wait
+    
+    Write-Host "파이썬 설치가 완료되었습니다!" -ForegroundColor Green
+    Write-Host "PowerShell을 재시작하여 환경 변수를 새로고침해야 합니다." -ForegroundColor Yellow
+    Write-Host "PowerShell을 재시작한 후 이 스크립트를 다시 실행해주세요." -ForegroundColor Yellow
+    Read-Host "아무 키나 눌러 종료하세요..."
+    exit
 }
 
 # 가상환경 생성 (필요한 경우)
@@ -285,10 +194,6 @@ try {
     Write-Host "가상환경이 활성화되었습니다." -ForegroundColor Green
 } catch {
     Write-Host "가상환경 활성화에 실패했습니다." -ForegroundColor Red
-    Write-Host "보안 설정으로 인해 스크립트 실행이 제한될 수 있습니다." -ForegroundColor Yellow
-    Write-Host "다음 명령어로 실행 정책을 변경해보세요: Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass" -ForegroundColor Cyan
-    
-    # 대안으로 배치 파일을 통해 활성화 시도
     Write-Host "배치 파일을 통해 가상환경 활성화를 시도합니다..." -ForegroundColor Yellow
     & cmd /c "venv\Scripts\activate.bat && pip install --upgrade pip && pip install -r requirements.txt && echo. > requirements_installed"
     
@@ -314,60 +219,87 @@ if (-not $packagesInstalled) {
     
     # 필요한 패키지 설치
     Write-Host "필요한 패키지를 설치합니다..." -ForegroundColor Yellow
-    
-    # webrtcvad 설치 처리
-    if ($vsToolsInstalled) {
-        # Visual C++ 빌드 도구가 있는 경우 모든 패키지 설치
-        try {
-            & pip install -r requirements.txt
-            if ($LASTEXITCODE -eq 0) {
-                Write-Host "모든 패키지 설치가 완료되었습니다." -ForegroundColor Green
-                "All packages installed on $(Get-Date)" | Out-File -FilePath "requirements_installed"
-            } else {
-                Write-Host "패키지 설치에 실패했습니다." -ForegroundColor Red
-                Read-Host "아무 키나 눌러 종료하세요..."
-                exit
-            }
-        } catch {
+    try {
+        & pip install -r requirements.txt
+        if ($LASTEXITCODE -eq 0) {
+            Write-Host "패키지 설치가 완료되었습니다." -ForegroundColor Green
+            "Packages installed on $(Get-Date)" | Out-File -FilePath "requirements_installed"
+        } else {
             Write-Host "패키지 설치에 실패했습니다." -ForegroundColor Red
             Read-Host "아무 키나 눌러 종료하세요..."
             exit
         }
-    } else {
-        # Visual C++ 빌드 도구가 없는 경우 webrtcvad를 제외하고 설치
-        Write-Host "Visual C++ 빌드 도구가 없어 webrtcvad를 제외하고 설치합니다." -ForegroundColor Yellow
-        try {
-            # requirements.txt 파일에서 webrtcvad를 제외한 패키지 목록 가져오기
-            $packages = Get-Content -Path "requirements.txt" | Where-Object { $_ -notmatch "webrtcvad" }
-            
-            # 패키지 설치
-            foreach ($package in $packages) {
-                if ($package.Trim() -ne "") {
-                    Write-Host "패키지 설치 중: $package" -ForegroundColor Yellow
-                    & pip install $package
-                }
-            }
-            
-            Write-Host "webrtcvad를 제외한 패키지 설치가 완료되었습니다." -ForegroundColor Green
-            "Packages installed without webrtcvad on $(Get-Date)" | Out-File -FilePath "requirements_installed"
-            
-            Write-Host "주의: VAD(Voice Activity Detection) 기능을 사용할 수 없습니다." -ForegroundColor Yellow
-            Write-Host "앱 실행 시 VAD 옵션을 비활성화해주세요." -ForegroundColor Yellow
-        } catch {
-            Write-Host "패키지 설치에 실패했습니다." -ForegroundColor Red
-            Read-Host "아무 키나 눌러 종료하세요..."
-            exit
-        }
+    } catch {
+        Write-Host "패키지 설치에 실패했습니다." -ForegroundColor Red
+        Read-Host "아무 키나 눌러 종료하세요..."
+        exit
     }
 }
 
 # FFmpeg 설치 (필요한 경우)
 if (-not $ffmpegInstalled) {
-    Write-Host "FFmpeg가 설치되어 있지 않습니다." -ForegroundColor Yellow
-    $installFFmpeg = Read-Host "FFmpeg를 자동으로 설치하시겠습니까? (Y/N)"
+    Write-Host "FFmpeg가 설치되어 있지 않습니다. 자동으로 설치합니다..." -ForegroundColor Yellow
     
-    if ($installFFmpeg -eq "Y" -or $installFFmpeg -eq "y") {
-        Write-Host "FFmpeg를 다운로드하고 설치합니다..." -ForegroundColor Yellow
+    # Chocolatey 설치 확인
+    if (!(Get-Command choco -ErrorAction SilentlyContinue)) {
+        Write-Host "Chocolatey가 설치되어 있지 않습니다. 설치를 시작합니다..." -ForegroundColor Yellow
+        
+        try {
+            # Chocolatey 설치
+            Write-Host "Chocolatey 설치 중..." -ForegroundColor Yellow
+            Set-ExecutionPolicy Bypass -Scope Process -Force
+            [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
+            Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+            
+            # 설치 확인
+            if (!(Get-Command choco -ErrorAction SilentlyContinue)) {
+                Write-Host "Chocolatey 설치에 실패했습니다. 대체 방식으로 FFmpeg 설치를 시도합니다." -ForegroundColor Red
+                # 직접 다운로드 방식으로 전환
+                $installMethod = "direct"
+            } else {
+                Write-Host "Chocolatey 설치가 완료되었습니다." -ForegroundColor Green
+                $installMethod = "choco"
+            }
+        }
+        catch {
+            Write-Host "Chocolatey 설치 중 오류가 발생했습니다: $_" -ForegroundColor Red
+            Write-Host "대체 방식으로 FFmpeg 설치를 시도합니다." -ForegroundColor Yellow
+            $installMethod = "direct"
+        }
+    } else {
+        Write-Host "Chocolatey가 이미 설치되어 있습니다." -ForegroundColor Green
+        $installMethod = "choco"
+    }
+    
+    # Chocolatey로 FFmpeg 설치
+    if ($installMethod -eq "choco") {
+        try {
+            Write-Host "Chocolatey를 통해 FFmpeg를 설치합니다..." -ForegroundColor Yellow
+            choco install ffmpeg -y
+            
+            # 환경 변수 갱신
+            $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
+            
+            # 설치 확인
+            if (Get-Command ffmpeg -ErrorAction SilentlyContinue) {
+                $ffmpegVersion = (ffmpeg -version 2>&1) | Select-Object -First 1
+                Write-Host "FFmpeg 설치가 완료되었습니다!" -ForegroundColor Green
+                Write-Host "설치된 버전: $ffmpegVersion" -ForegroundColor Green
+                $ffmpegInstalled = $true
+            } else {
+                Write-Host "FFmpeg가 설치되었지만 PATH에 등록되지 않았습니다. 대체 방식으로 설치를 시도합니다." -ForegroundColor Yellow
+                $installMethod = "direct"
+            }
+        }
+        catch {
+            Write-Host "Chocolatey를 통한 FFmpeg 설치 중 오류가 발생했습니다. 대체 방식으로 설치를 시도합니다." -ForegroundColor Red
+            $installMethod = "direct"
+        }
+    }
+    
+    # 직접 다운로드 방식으로 FFmpeg 설치
+    if ($installMethod -eq "direct") {
+        Write-Host "FFmpeg를 직접 다운로드하여 설치합니다..." -ForegroundColor Yellow
         
         # 임시 디렉토리 생성
         if (-not (Test-Path -Path "temp")) {
@@ -376,10 +308,13 @@ if (-not $ffmpegInstalled) {
         
         # FFmpeg 다운로드
         try {
+            Write-Host "FFmpeg 다운로드 중..." -ForegroundColor Yellow
             Invoke-WebRequest -Uri "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip" -OutFile "temp\ffmpeg.zip"
         } catch {
             Write-Host "FFmpeg 다운로드에 실패했습니다." -ForegroundColor Red
             Write-Host "수동으로 설치해주세요: https://ffmpeg.org/download.html" -ForegroundColor Red
+            Read-Host "아무 키나 눌러 종료하세요..."
+            exit
         }
         
         # FFmpeg 압축 해제
@@ -396,25 +331,28 @@ if (-not $ffmpegInstalled) {
             $env:Path = "$((Get-Location).Path)\$ffmpegBin;$env:Path"
             
             # 시스템 PATH에 FFmpeg 추가
-            $addToPath = Read-Host "FFmpeg를 시스템 PATH에 추가할까요? (Y/N)"
-            if ($addToPath -eq "Y" -or $addToPath -eq "y") {
-                Write-Host "FFmpeg를 시스템 PATH에 추가합니다..." -ForegroundColor Yellow
-                try {
-                    [Environment]::SetEnvironmentVariable("Path", "$((Get-Location).Path)\$ffmpegBin;$([Environment]::GetEnvironmentVariable('Path', 'Machine'))", "Machine")
-                    Write-Host "FFmpeg가 시스템 PATH에 추가되었습니다." -ForegroundColor Green
-                } catch {
-                    Write-Host "시스템 PATH 업데이트에 실패했습니다. 관리자 권한이 필요할 수 있습니다." -ForegroundColor Red
-                }
+            Write-Host "FFmpeg를 시스템 PATH에 추가합니다..." -ForegroundColor Yellow
+            try {
+                [Environment]::SetEnvironmentVariable("Path", "$((Get-Location).Path)\$ffmpegBin;$([Environment]::GetEnvironmentVariable('Path', 'Machine'))", "Machine")
+                Write-Host "FFmpeg가 시스템 PATH에 추가되었습니다." -ForegroundColor Green
+            } catch {
+                Write-Host "시스템 PATH 업데이트에 실패했습니다. 현재 세션에서만 FFmpeg를 사용할 수 있습니다." -ForegroundColor Red
             }
             
-            Write-Host "FFmpeg 설치가 완료되었습니다!" -ForegroundColor Green
+            # 설치 확인
+            if (Get-Command ffmpeg -ErrorAction SilentlyContinue) {
+                Write-Host "FFmpeg 설치가 완료되었습니다!" -ForegroundColor Green
+                $ffmpegInstalled = $true
+            } else {
+                Write-Host "FFmpeg 설치 후에도 PATH에 등록되지 않았습니다." -ForegroundColor Yellow
+                Write-Host "PowerShell을 재시작하거나 컴퓨터를 재부팅한 후 FFmpeg를 사용할 수 있습니다." -ForegroundColor Yellow
+            }
         } catch {
             Write-Host "FFmpeg 압축 해제 및 설치에 실패했습니다." -ForegroundColor Red
             Write-Host "수동으로 설치해주세요: https://ffmpeg.org/download.html" -ForegroundColor Red
+            Read-Host "아무 키나 눌러 종료하세요..."
+            exit
         }
-    } else {
-        Write-Host "FFmpeg 설치를 건너뜁니다." -ForegroundColor Yellow
-        Write-Host "일부 비디오 파일 처리 기능이 제한될 수 있습니다." -ForegroundColor Yellow
     }
 }
 
@@ -435,10 +373,12 @@ if ($runApp -eq "Y" -or $runApp -eq "y") {
 
 # 임시 파일 정리
 if (Test-Path -Path "temp") {
-    $cleanup = Read-Host "임시 파일을 정리하시겠습니까? (Y/N)"
-    if ($cleanup -eq "Y" -or $cleanup -eq "y") {
-        Write-Host "임시 파일을 정리합니다..." -ForegroundColor Yellow
-        Remove-Item -Path "temp" -Recurse -Force
+    Write-Host "임시 파일을 정리합니다..." -ForegroundColor Yellow
+    try {
+        Remove-Item -Path "temp" -Recurse -Force -ErrorAction SilentlyContinue
+        Write-Host "임시 파일 정리가 완료되었습니다." -ForegroundColor Green
+    } catch {
+        Write-Host "일부 임시 파일을 삭제할 수 없습니다. 나중에 수동으로 temp 폴더를 삭제해주세요." -ForegroundColor Yellow
     }
 }
 
