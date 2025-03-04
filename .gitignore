@@ -4,3 +4,4 @@ __pycache__/
 *.pyc
 temp/
 tmp/
+requirements_installed
