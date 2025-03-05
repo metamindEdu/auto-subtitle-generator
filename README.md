@@ -64,7 +64,7 @@
 
 ### 실행
 
-- **Windows**: `2. run_windows.bat` 파일을 더블클릭합니다.
+- **Windows**: `install_run_windows.ps1` 파일을 우클릭한 후, "PowerShell에서 실행"을 눌러 실행합니다.
 - **macOS/Linux**: 터미널에서 `./2. run_mac_linux.sh` 명령을 실행합니다.
 
 실행 후 웹 브라우저가 자동으로 열리며 Streamlit 인터페이스가 표시됩니다. 브라우저가 자동으로 열리지 않는 경우 `http://localhost:8501`로 접속하세요.
