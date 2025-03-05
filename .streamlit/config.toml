@@ -1,0 +1,2 @@
+[server]
+maxUploadSize = 1000  # 기본값을 1GB로 설정
