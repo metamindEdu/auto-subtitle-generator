@@ -1,4 +1,4 @@
-@echo off
+﻿@echo off
 chcp 65001 > nul
 
 echo ===================================================
@@ -8,7 +8,7 @@ echo ===================================================
 :: 가상환경 활성화
 call venv\Scripts\activate.bat
 
-:: Streamlit 앱 실행 - 추가 매개변수 전달
+:: Streamlit 앱 실행
 echo 자막 생성기를 실행합니다...
 echo 잠시 후 브라우저가 자동으로 열립니다.
 echo 브라우저가 열리지 않으면 http://localhost:8501 로 접속하세요.

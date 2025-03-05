@@ -46,6 +46,7 @@ $pythonInstalled = $false
 $venvExists = $false
 $packagesInstalled = $false
 $ffmpegInstalled = $false
+$runInstalled = $false
 
 Write-Host "시스템 환경을 확인하는 중..." -ForegroundColor Yellow
 
@@ -96,6 +97,14 @@ if (Test-Path -Path "requirements_installed") {
     Write-Host "? 패키지 설치 상태를 확인할 수 없습니다." -ForegroundColor Yellow
 }
 
+# 실행 파일 설치 확인
+if (Test-Path -Path "2. run_windows.bat") {
+    Write-Host "✓ 실행 파일이 이미 존재합니다." -ForegroundColor Green
+    $runInstalled = $true
+} else {
+    Write-Host "✗ 실행 파일이 없습니다." -ForegroundColor Red
+}
+
 Write-Host ""
 Write-Host "설치 상태 요약:" -ForegroundColor Yellow
 Write-Host "---------------------------------------------------"
@@ -122,11 +131,17 @@ if ($ffmpegInstalled) {
 } else {
     Write-Host "✗ FFmpeg: 설치되지 않음" -ForegroundColor Red
 }
+
+if ($runInstalled) {
+    Write-Host "✓ 실행 파일: 설치됨" -ForegroundColor Green
+} else {
+    Write-Host "✗ 실행 파일: 설치되지 않음" -ForegroundColor Red
+}
 Write-Host "---------------------------------------------------"
 Write-Host ""
 
 # 모든 필요 조건이 충족되었는지 확인
-if ($pythonInstalled -and $venvExists -and $packagesInstalled -and $ffmpegInstalled) {
+if ($pythonInstalled -and $venvExists -and $packagesInstalled -and $ffmpegInstalled -and $runInstalled) {
     Write-Host "모든 필요 조건이 이미 설치되어 있습니다!" -ForegroundColor Green
     Write-Host "프로그램을 바로 실행할 수 있습니다." -ForegroundColor Green
     
@@ -353,6 +368,48 @@ if (-not $ffmpegInstalled) {
             Read-Host "아무 키나 눌러 종료하세요..."
             exit
         }
+    }
+}
+
+if (-not $runInstalled) {
+    try {
+        Write-Host "실행 배치 파일을 생성합니다..." -ForegroundColor Yellow
+
+        $runBatchContent = @"
+@echo off
+chcp 65001 > nul
+
+echo ===================================================
+echo       자동 자막 생성기를 시작합니다...
+echo ===================================================
+
+:: 가상환경 활성화
+call venv\Scripts\activate.bat
+
+:: Streamlit 앱 실행
+echo 자막 생성기를 실행합니다...
+echo 잠시 후 브라우저가 자동으로 열립니다.
+echo 브라우저가 열리지 않으면 http://localhost:8501 로 접속하세요.
+
+:: 추가 매개변수가 있으면 전달
+if "%*"=="" (
+    streamlit run app.py
+) else (
+    streamlit run app.py %*
+)
+
+pause
+"@
+
+        # 배치 파일 생성
+        $runBatchContent | Out-File -FilePath "2. run_windows.bat" -Encoding utf8 -Force
+        Write-Host "실행 배치 파일이 성공적으로 생성되었습니다." -ForegroundColor Green
+
+        $runInstalled = $true
+    } catch {
+        Write-Host "실행 파일 복사에 실패했습니다." -ForegroundColor Red
+        Read-Host "아무 키나 눌러 종료하세요..."
+        exit
     }
 }
 
