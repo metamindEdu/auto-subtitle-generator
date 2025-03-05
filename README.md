@@ -104,6 +104,29 @@ ANTHROPIC_API_KEY=your_anthropic_api_key_here
 - **최대 시간**: 한 자막당 최대 지속 시간 (초)
 - **VAD(Voice Activity Detection)**: 음성이 있는 부분만 감지하여 처리 (선택적 기능, Visual C++ 빌드 도구 필요). OpenAI Whisper 모델의 잘 알려진 버그로 인해 음성 공백 구간이 긴 영상 및 음성 파일을 처리할 때 특히 중요
 
+#### 업로드 크기 제한
+
+기본적으로 파일 업로드 크기 제한은 1GB(1000MB)로 설정되어 있습니다. 더 큰 파일을 처리하거나 제한을 변경하려면 다음과 같이 할 수 있습니다:
+
+1. **설정 파일 수정**:
+   - `.streamlit/config.toml` 파일을 열고 다음 값을 원하는 크기로 변경합니다:
+     ```toml
+     [server]
+     maxUploadSize = 2000  # 원하는 크기(MB)로 변경 (예: 2GB)
+     ```
+
+2. **명령줄에서 실행하는 방법**:
+   - 임시로 다른 값을 적용하려면 실행 파일에 매개변수를 추가합니다:
+     ```
+     # Windows
+     2. run_windows.bat --server.maxUploadSize=2000
+     
+     # macOS/Linux
+     ./2. run_mac_linux.sh --server.maxUploadSize=2000
+     ```
+
+대용량 비디오 파일의 경우, 자막 생성 전에 오디오만 추출하여 MP3로 변환하면 처리 속도도 빨라질 수 있습니다.
+
 ## 문제 해결
 
 ### 일반적인 문제

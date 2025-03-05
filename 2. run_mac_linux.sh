@@ -20,4 +20,10 @@ echo "잠시 후 브라우저가 자동으로 열립니다."
 echo "브라우저가 열리지 않으면 http://localhost:8501 로 접속하세요."
 echo ""
 echo "종료하려면 Ctrl+C를 누르세요."
-streamlit run app.py
+
+# 추가 매개변수가 있으면 전달
+if [ $# -eq 0 ]; then
+    streamlit run app.py
+else
+    streamlit run app.py "$@"
+fi
