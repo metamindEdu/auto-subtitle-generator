@@ -1,4 +1,4 @@
-# 자동 자막 생성기 (Auto Video Subtitles)
+# 인공지능 자동 자막 생성기 (AI Auto Video Subtitles Generator)
 
 음성 또는 영상 파일에서 자동으로 자막을 생성하고, 선택적으로 LLM(대규모 언어 모델)을 사용하여 자막을 교정하는 도구입니다.
 
