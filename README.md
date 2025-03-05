@@ -41,7 +41,7 @@
    - 다운로드보단 git clone을 추천드립니다.
    - 다운로드한 경우 통합설치&실행파일(`install_run_windows.ps1`) 실행 시 '이 파일을 열기 전에 항상 확인' 체크박스를 해제해야 합니다.
 2. `install_run_windows.ps1` 통합설치&실행파일을 마우스 오른쪽 버튼 클릭 후, "PowerShell에서 실행"을 클릭합니다.
-   - PowerShell에서 실행 정책 제한이 있는 경우: `powershell -ExecutionPolicy Bypass -File "1. install_windows.ps1"`
+   - PowerShell에서 실행 정책 제한이 있는 경우: `powershell -ExecutionPolicy Bypass -File "install_run_windows.ps1"`
 3. 화면의 지시에 따라 'Y'를 입력하며 설치를 진행합니다.
    - 파이썬이 설치되어 있지 않은 경우 자동으로 Python 3.10을 설치할 수 있습니다.
    - Microsoft Visual C++ 빌드 도구가 없는 경우 자동으로 설치하거나 이 기능을 건너뛸 수 있습니다.
