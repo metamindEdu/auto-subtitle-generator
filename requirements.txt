@@ -1,7 +1,5 @@
---find-links https://download.pytorch.org/whl/cu121
-torch>=2.0.0
 openai-whisper
-numpy==2.1.0
+numpy==1.24.3
 openai
 anthropic
 pysrt

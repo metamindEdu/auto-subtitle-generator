@@ -1,2 +1,2 @@
 [server]
-maxUploadSize = 1000  # 기본값을 1GB로 설정
+maxUploadSize = 5000  # 기본값을 5GB로 설정

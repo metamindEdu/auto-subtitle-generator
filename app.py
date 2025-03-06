@@ -1,5 +1,6 @@
 import os
 import tempfile
+import torch
 import streamlit as st
 import whisper
 import pysrt
@@ -22,6 +23,166 @@ load_dotenv()
 
 warnings.filterwarnings("ignore", message="FP16 is not supported on CPU; using FP32 instead")
 warnings.filterwarnings("ignore", category=FutureWarning)
+
+def check_gpu_status():
+    """GPU 감지 및 사용 상태를 확인하는 함수"""
+    gpu_info = {
+        "is_available": torch.cuda.is_available(),
+        "device_count": torch.cuda.device_count() if torch.cuda.is_available() else 0,
+        "current_device": None,
+        "device_name": None,
+        "memory_allocated": None,
+        "memory_reserved": None,
+        "memory_total": None
+    }
+    
+    if gpu_info["is_available"]:
+        current_device = torch.cuda.current_device()
+        gpu_info["current_device"] = current_device
+        gpu_info["device_name"] = torch.cuda.get_device_name(current_device)
+        
+        # 단위 변환 함수 (바이트 -> GB)
+        def bytes_to_gb(bytes_value):
+            return round(bytes_value / (1024**3), 2)
+        
+        try:
+            gpu_info["memory_allocated"] = bytes_to_gb(torch.cuda.memory_allocated(current_device))
+            gpu_info["memory_reserved"] = bytes_to_gb(torch.cuda.memory_reserved(current_device))
+            
+            # 전체 VRAM 용량 확인 (Windows 전용)
+            if os.name == 'nt':
+                try:
+                    # nvidia-smi 명령어 실행
+                    import subprocess
+                    result = subprocess.check_output(['nvidia-smi', '--query-gpu=memory.total', '--format=csv,noheader,nounits'], 
+                                               universal_newlines=True)
+                    memory_total = int(result.strip())
+                    gpu_info["memory_total"] = memory_total / 1024  # MB -> GB
+                except:
+                    gpu_info["memory_total"] = "확인 불가"
+            else:
+                gpu_info["memory_total"] = "확인 불가"
+        except:
+            # 메모리 정보를 가져올 수 없는 경우
+            gpu_info["memory_allocated"] = "확인 불가"
+            gpu_info["memory_reserved"] = "확인 불가"
+            gpu_info["memory_total"] = "확인 불가"
+    
+    return gpu_info
+
+def display_gpu_info():
+    """GPU 정보를 Streamlit UI에 표시하는 함수"""
+    gpu_info = check_gpu_status()
+    
+    # GPU 사용 가능 여부에 따라 다른 색상 및 메시지 표시
+    if gpu_info["is_available"]:
+        st.success("🎮 GPU 감지됨!")
+        
+        # GPU 정보 표시
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.metric("감지된 GPU 수", gpu_info["device_count"])
+            st.write(f"**모델**: {gpu_info['device_name']}")
+        
+        with col2:
+            if isinstance(gpu_info["memory_allocated"], (int, float)):
+                st.metric("사용 중인 VRAM", f"{gpu_info['memory_allocated']} GB")
+            else:
+                st.write("**사용 중인 VRAM**: 확인 불가")
+                
+            if isinstance(gpu_info["memory_total"], (int, float)):
+                st.metric("전체 VRAM", f"{gpu_info['memory_total']} GB")
+            else:
+                st.write("**전체 VRAM**: 확인 불가")
+        
+        # Whisper 모델의 GPU 사용 설정
+        st.info(f"🔍 Whisper 모델 확인: GPU 사용이 가능합니다! {gpu_info['device_name']}에서 사용률이 낮은 경우 GPU 부하가 낮거나 CPU로 일부 작업이 처리될 수 있습니다.")
+        
+        # 환경 변수 확인 - expander 사용하지 않고 직접 표시
+        st.subheader("🛠️ GPU 최적화 설정 확인")
+        cuda_env_vars = {
+            "CUDA_VISIBLE_DEVICES": os.environ.get("CUDA_VISIBLE_DEVICES", "설정되지 않음"),
+            "PYTORCH_CUDA_ALLOC_CONF": os.environ.get("PYTORCH_CUDA_ALLOC_CONF", "설정되지 않음"),
+            "TF_FORCE_GPU_ALLOW_GROWTH": os.environ.get("TF_FORCE_GPU_ALLOW_GROWTH", "설정되지 않음")
+        }
+        
+        for var_name, var_value in cuda_env_vars.items():
+            st.write(f"**{var_name}**: {var_value}")
+        
+        if all(value == "설정되지 않음" for value in cuda_env_vars.values()):
+            st.warning("GPU 관련 환경 변수가 설정되지 않았습니다. 필요한 경우 최적화를 위해 환경 변수를 설정하세요.")
+        
+        # Torch 버전 정보
+        st.write(f"**PyTorch 버전**: {torch.__version__}")
+        st.write(f"**CUDA 버전**: {torch.version.cuda or '사용 불가'}")
+    else:
+        st.warning("⚠️ GPU가 감지되지 않았습니다. CPU 모드로 실행됩니다.")
+        st.write("Whisper 모델은 CPU에서도 작동하지만, 처리 속도가 느립니다.")
+        
+        # 가능한 원인 및 해결책 - expander 없이 직접 표시
+        st.subheader("가능한 원인 및 해결책")
+        st.write("""
+        - **CUDA가 설치되지 않음**: PyTorch CUDA 버전을 설치하세요: `pip install torch --index-url https://download.pytorch.org/whl/cu121`
+        - **드라이버 문제**: 최신 NVIDIA 드라이버가 설치되어 있는지 확인하세요.
+        - **CUDA 버전 불일치**: PyTorch와 호환되는 CUDA 버전을 설치하세요.
+        - **환경 변수 문제**: 'CUDA_VISIBLE_DEVICES' 환경 변수가 올바르게 설정되어 있는지 확인하세요.
+        """)
+
+class GPUMonitor:
+    """GPU 사용량을 모니터링하는 클래스"""
+    def __init__(self):
+        self.available = torch.cuda.is_available()
+        self.start_memory = 0
+        self.peak_memory = 0
+        
+    def start(self):
+        """모니터링 시작"""
+        if not self.available:
+            return
+        
+        # 시작할 때 현재 메모리 사용량 기록
+        torch.cuda.reset_peak_memory_stats()
+        self.start_memory = torch.cuda.memory_allocated() / (1024**3)  # GB
+        self.peak_memory = self.start_memory
+        
+    def get_current_stats(self):
+        """현재 GPU 사용 통계 반환"""
+        if not self.available:
+            return {"status": "GPU 사용 불가"}
+        
+        current_memory = torch.cuda.memory_allocated() / (1024**3)  # GB
+        peak_memory = torch.cuda.max_memory_allocated() / (1024**3)  # GB
+        self.peak_memory = max(self.peak_memory, peak_memory)
+        
+        # GPU 사용률 추정 (NVIDIA-SMI에서 제공하는 것처럼 정확하지는 않음)
+        try:
+            memory_utilization = current_memory / (torch.cuda.get_device_properties(0).total_memory / (1024**3)) * 100
+        except:
+            memory_utilization = 0
+        
+        return {
+            "current_memory": f"{current_memory:.2f} GB",
+            "peak_memory": f"{peak_memory:.2f} GB",
+            "memory_diff": f"{current_memory - self.start_memory:.2f} GB",
+            "memory_utilization": f"{memory_utilization:.1f}%"
+        }
+    
+    def display_stats(self, container):
+        """Streamlit 컨테이너에 GPU 통계 표시"""
+        if not self.available:
+            container.warning("GPU 모니터링을 사용할 수 없습니다 (GPU가 감지되지 않음)")
+            return
+        
+        stats = self.get_current_stats()
+        
+        col1, col2 = container.columns(2)
+        col1.metric("현재 VRAM 사용량", stats["current_memory"], stats["memory_diff"])
+        col2.metric("VRAM 사용률", stats["memory_utilization"])
+        
+        # 최대 메모리 사용량이 크게 증가한 경우 경고
+        if float(stats["peak_memory"].split()[0]) > 1.5 * self.start_memory:
+            container.warning(f"⚠️ 작업 중 최대 VRAM 사용량: {stats['peak_memory']}")
 
 # 세션 상태 초기화
 if 'vad_module_loaded' not in st.session_state:
@@ -140,12 +301,22 @@ class PromptManager:
 
 class SubtitleGenerator:
     def __init__(self, model_size="small", llm_provider=None):
+        # GPU 사용 가능 여부 확인
+        self.gpu_available = torch.cuda.is_available()
+        self.device = "cuda" if self.gpu_available else "cpu"
+
         with st.spinner("Whisper 모델 로딩 중..."):
             self.model = whisper.load_model(model_size)
         st.success("모델 로딩 완료!")
 
         self.llm_provider = llm_provider
         self.prompt_manager = PromptManager()
+
+        # GPU 사용 메모리 로깅
+        if self.gpu_available:
+            current_device = torch.cuda.current_device()
+            allocated_memory = torch.cuda.memory_allocated(current_device) / (1024**3)  # GB 단위
+            st.info(f"GPU 메모리 사용량: {allocated_memory:.2f} GB")
         
         self.llm_client = None
         if llm_provider == "openai":
@@ -306,31 +477,19 @@ class SubtitleGenerator:
         
         # HTML 형식으로 로그 구성
         log_html = "<div class='log-container' id='log-container'>"
+        reversed_logs = list(reversed(st.session_state.correction_logs))
         
-        for i, log in enumerate(st.session_state.correction_logs):
+        for i, log in enumerate(reversed_logs):
             if "원본 자막:" in log:
                 log_html += f"<div class='original-subtitle'>{log}</div>"
             elif "교정된 자막:" in log:
-                log_html += f"<div class='corrected-subtitle'>{log}</div>"
                 if i < len(st.session_state.correction_logs) - 1:
                     log_html += "<div class='log-divider'></div>"
+                log_html += f"<div class='corrected-subtitle'>{log}</div>"
             elif "오류" in log:
                 log_html += f"<div class='error-message'>{log}</div>"
         
         log_html += "</div>"
-        
-        # JavaScript로 자동 스크롤 추가
-        log_html += """
-        <script>
-            // 페이지 로드 후 실행
-            (function() {
-                const logContainer = document.getElementById('log-container');
-                if (logContainer) {
-                    logContainer.scrollTop = logContainer.scrollHeight;
-                }
-            })();
-        </script>
-        """
         
         # 로그 표시
         log_placeholder.markdown(log_html, unsafe_allow_html=True)
@@ -437,6 +596,10 @@ class SubtitleGenerator:
                 transcribe_options = {}
                 if language:
                     transcribe_options["language"] = language
+
+                # GPU 상태 업데이트 (gpu_monitor가 전달된 경우)
+                if hasattr(self, 'gpu_monitor') and self.gpu_monitor:
+                    self.gpu_monitor.display_stats(self.gpu_stats_container)
                     
                 result = self.model.transcribe(segment_audio, **transcribe_options)
                 
@@ -735,6 +898,23 @@ def main():
     # 사이드바 - 설정
     with st.sidebar:
         st.title("⚙️ 설정")
+
+        with st.expander("🖥️ 하드웨어 정보", expanded=True):
+            display_gpu_info()
+
+        if torch.cuda.is_available():
+            with st.expander("GPU 최적화 옵션", expanded=False):
+                st.info("최신 GPU는 Whisper 모델에는 높은 사용률이 필요하지 않을 수 있습니다.")
+                use_half_precision = st.checkbox("Half Precision 사용 (FP16, 메모리 절약)", value=True)
+                device_id = st.selectbox(
+                    "GPU 장치 선택", 
+                    options=list(range(torch.cuda.device_count())),
+                    format_func=lambda x: f"GPU {x}: {torch.cuda.get_device_name(x)}",
+                    index=0
+                )
+                
+                if use_half_precision:
+                    os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:128"
         
         # API 키 설정
         with st.expander("API 키 설정", expanded=False):
@@ -1066,6 +1246,11 @@ def main():
             # 로그 초기화
             st.session_state.correction_logs = []
 
+            # GPU 모니터링 시작
+            gpu_monitor = GPUMonitor()
+            gpu_monitor.start()
+            gpu_stats_container = st.empty()
+
             # 프로그레스 바와 상태 텍스트
             progress_bar = st.progress(0)
             status_text = st.empty()
@@ -1077,6 +1262,10 @@ def main():
                 model_size=whisper_model,
                 llm_provider=llm_provider
             )
+
+            # GPU 상태 업데이트
+            if torch.cuda.is_available():
+                gpu_monitor.display_stats(gpu_stats_container)
             
             progress_bar.progress(10)
             status_text.text("자막 생성 중...")
