@@ -1,3 +1,5 @@
+# --extra-index-url https://download.pytorch.org/whl/cu121
+# torch==2.5.1
 openai-whisper
 numpy==1.24.3
 openai

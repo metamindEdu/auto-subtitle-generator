@@ -196,7 +196,7 @@ if (-not $installationCompleted) {
     } catch {
         Write-Host "가상환경 활성화에 실패했습니다." -ForegroundColor Red
         Write-Host "배치 파일을 통해 가상환경 활성화를 시도합니다..." -ForegroundColor Yellow
-        & cmd /c "venv\Scripts\activate.bat && pip install --upgrade pip && pip install torch==2.1.2 --index-url https://download.pytorch.org/whl/cu121 && pip install --no-cache-dir -r requirements.txt && echo. > requirements_installed"
+        & cmd /c "venv\Scripts\activate.bat && pip install --upgrade pip && pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cu121 && pip install --no-cache-dir -r requirements.txt && echo. > requirements_installed"
         
         if ($LASTEXITCODE -ne 0) {
             Write-Host "가상환경 활성화에 실패했습니다." -ForegroundColor Red
@@ -222,7 +222,7 @@ if (-not $installationCompleted) {
         Write-Host "필요한 패키지를 설치합니다..." -ForegroundColor Yellow
         try {
             # 먼저 PyTorch를 CUDA 버전으로 직접 설치
-            & pip install torch==2.1.2 --index-url https://download.pytorch.org/whl/cu121
+            & pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cu121
             & pip install -r requirements.txt
             if ($LASTEXITCODE -eq 0) {
                 Write-Host "패키지 설치가 완료되었습니다." -ForegroundColor Green
