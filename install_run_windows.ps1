@@ -221,9 +221,33 @@ if (-not $installationCompleted) {
         # 필요한 패키지 설치
         Write-Host "필요한 패키지를 설치합니다..." -ForegroundColor Yellow
         try {
-            # 먼저 PyTorch를 CUDA 버전으로 직접 설치
-            & pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cu121
+            # 인텔 GPU 감지 시도
+            $intelGpu = $false
+            try {
+                $gpuInfo = Get-WmiObject -Query "SELECT * FROM Win32_VideoController" | Where-Object { $_.Name -like "*Intel*Arc*" }
+                if ($gpuInfo) {
+                    Write-Host "Intel Arc GPU가 감지되었습니다: $($gpuInfo.Name)" -ForegroundColor Green
+                    $intelGpu = $true
+                }
+            } catch {
+                Write-Host "GPU 정보 확인 중 오류 발생, 기본 설치를 진행합니다." -ForegroundColor Yellow
+            }
+
+            # 기본 PyTorch 설치
+            if ($intelGpu) {
+                # Intel Arc GPU용 패키지 설치
+                & pip install torch torchvision torchaudio
+                # 정확한 버전과 인덱스 URL로 Intel Extension 설치
+                & pip install intel-extension-for-pytorch==2.1.30.post0 --extra-index-url https://pytorch-extension.intel.com/release-whl/stable/xpu/us/
+                Write-Host "Intel GPU 지원 PyTorch 패키지가 설치되었습니다." -ForegroundColor Green
+            } else {
+                # NVIDIA GPU 또는 CPU용 CUDA 패키지 설치
+                & pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cu121
+            }
+
+            # 나머지 패키지 설치
             & pip install -r requirements.txt
+            
             if ($LASTEXITCODE -eq 0) {
                 Write-Host "패키지 설치가 완료되었습니다." -ForegroundColor Green
                 "Packages installed on $(Get-Date)" | Out-File -FilePath "requirements_installed"
