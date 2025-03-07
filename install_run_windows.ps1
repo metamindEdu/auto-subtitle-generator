@@ -346,7 +346,7 @@ if (-not $installationCompleted) {
                 if (Get-Command ffmpeg -ErrorAction SilentlyContinue) {
                     $ffmpegVersion = (ffmpeg -version 2>&1) | Select-Object -First 1
                     Write-Host "FFmpeg 설치가 완료되었습니다!" -ForegroundColor Green
-                    Write-Host "설치된 버전: $ffmpegVersion" -ForegroundColor Green
+                    Write-Host "설치된 버전: $ffmpegVersion"
                     $ffmpegInstalled = $true
                 } else {
                     Write-Host "FFmpeg가 설치되었지만 PATH에 등록되지 않았습니다. 대체 방식으로 설치를 시도합니다." -ForegroundColor Yellow
@@ -424,10 +424,6 @@ if (-not $installationCompleted) {
     Write-Host "            설치가 완료되었습니다!" -ForegroundColor Green
     Write-Host "===================================================" -ForegroundColor Green
     Write-Host ""
-    Write-Host "자막 생성기를 실행합니다..." -ForegroundColor Yellow
-
-    # 별도의 창에서 직접 파이썬으로 streamlit 모듈 실행
-    $process = Start-Process -FilePath "cmd.exe" -ArgumentList "/k cd `"$((Get-Location).Path)`" && call venv\Scripts\activate.bat && echo 자막 생성기를 실행하는 중입니다... && python -m streamlit run app.py" -PassThru
 
     # 임시 파일 정리
     if (Test-Path -Path "temp") {
@@ -440,10 +436,8 @@ if (-not $installationCompleted) {
         }
     }
 
-    Write-Host "설치 과정이 완료되었습니다." -ForegroundColor Green
-    Write-Host "프로그램이 별도의 창에서 실행 중입니다." -ForegroundColor Green
-    Write-Host "스트림릿이 웹 브라우저에서 열릴 때까지 기다려 주세요." -ForegroundColor Yellow
-    Write-Host "이 창은 닫으셔도 됩니다." -ForegroundColor Yellow
+    Write-Host "모든 설치 과정이 완료되었습니다." -ForegroundColor Green
+    Write-Host "이 창을 닫고 install_run_windows.ps1 스크립트를 다시 실행하면 자막 생성기가 정상적으로 열릴 것입니다."
 
     # 사용자가 직접 창을 닫도록 함
     Read-Host "아무 키나 눌러 종료하세요..."
