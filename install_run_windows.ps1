@@ -216,17 +216,22 @@ if (-not $installationCompleted) {
         Write-Host "파이썬 설치가 완료되었습니다!" -ForegroundColor Green
         Write-Host "환경 변수를 갱신하고 스크립트를 다시 실행합니다..." -ForegroundColor Yellow
         
-        # 환경 변수 갱신
-        $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
-        
         # 현재 스크립트 경로와 작업 디렉토리 가져오기
         $scriptPath = $MyInvocation.MyCommand.Definition
         $currentPath = (Get-Location).Path
         
-        # 스크립트 재실행
-        Start-Process PowerShell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`" -Elevated -OriginalPath `"$currentPath`"" -Verb RunAs -Wait
+        # 재실행 배치 파일 생성
+        $batchContent = @"
+@echo off
+echo 파이썬 설치 완료 후 환경 변수를 갱신하고 스크립트를 다시 실행합니다...
+powershell -NoProfile -ExecutionPolicy Bypass -File "$scriptPath" -Elevated -OriginalPath "$currentPath"
+"@
         
-        # 현재 프로세스 종료
+        $batchPath = Join-Path -Path $currentPath -ChildPath "temp\restart_script.bat"
+        $batchContent | Out-File -FilePath $batchPath -Encoding ASCII
+        
+        # 새 CMD 창에서 배치 파일 실행하고 현재 프로세스 종료
+        Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"$batchPath`"" -Wait:$false
         exit
     }
 
