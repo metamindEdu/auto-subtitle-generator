@@ -214,24 +214,9 @@ if (-not $installationCompleted) {
         Start-Process -FilePath "temp\python_installer.exe" -ArgumentList "/quiet", "InstallAllUsers=1", "PrependPath=1", "Include_test=0", "Include_pip=1" -Wait
         
         Write-Host "파이썬 설치가 완료되었습니다!" -ForegroundColor Green
-        Write-Host "환경 변수를 갱신하고 스크립트를 다시 실행합니다..." -ForegroundColor Yellow
-        
-        # 현재 스크립트 경로와 작업 디렉토리 가져오기
-        $scriptPath = $MyInvocation.MyCommand.Definition
-        $currentPath = (Get-Location).Path
-        
-        # 재실행 배치 파일 생성
-        $batchContent = @"
-@echo off
-echo 파이썬 설치 완료 후 환경 변수를 갱신하고 스크립트를 다시 실행합니다...
-powershell -NoProfile -ExecutionPolicy Bypass -File "$scriptPath" -Elevated -OriginalPath "$currentPath"
-"@
-        
-        $batchPath = Join-Path -Path $currentPath -ChildPath "temp\restart_script.bat"
-        $batchContent | Out-File -FilePath $batchPath -Encoding ASCII
-        
-        # 새 CMD 창에서 배치 파일 실행하고 현재 프로세스 종료
-        Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"$batchPath`"" -Wait:$false
+        Write-Host "PowerShell을 재시작하여 환경 변수를 새로고침해야 합니다." -ForegroundColor Yellow
+        Write-Host "이 스크립트를 다시 실행하여 나머지 설치를 완료해주세요." -ForegroundColor Yellow
+        Read-Host "아무 키나 눌러 종료하세요..."
         exit
     }
 
