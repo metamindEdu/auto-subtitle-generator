@@ -830,7 +830,7 @@ def main():
     with st.sidebar:
         st.title("⚙️ 설정")
 
-        with st.expander("🖥️ 하드웨어 정보", expanded=True):
+        with st.expander("GPU 정보", expanded=False):
             display_gpu_info()
 
         if torch.cuda.is_available():
