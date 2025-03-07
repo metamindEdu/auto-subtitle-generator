@@ -6,6 +6,51 @@ function Test-Admin {
     $currentUser.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
+# Microsoft Visual C++ Build Tools 설치 (webrtcvad 모듈 설치 전에 필요)
+function Install-BuildTools {
+    Write-Host "Microsoft Visual C++ Build Tools 설치가 필요합니다 (webrtcvad 모듈 설치를 위해)" -ForegroundColor Yellow
+    $installBuildTools = Read-Host "Visual C++ Build Tools를 자동으로 설치하시겠습니까? (y/n)"
+    
+    if ($installBuildTools -eq "y" -or $installBuildTools -eq "Y") {
+        Write-Host "Visual C++ Build Tools 다운로드 중..." -ForegroundColor Yellow
+        
+        # 임시 디렉토리 생성
+        if (-not (Test-Path -Path "temp")) {
+            New-Item -Path "temp" -ItemType Directory | Out-Null
+        }
+        
+        # Build Tools 다운로드
+        try {
+            Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vs_BuildTools.exe" -OutFile "temp\vs_BuildTools.exe"
+        } catch {
+            Write-Host "Visual C++ Build Tools 다운로드에 실패했습니다." -ForegroundColor Red
+            Write-Host "수동으로 설치해주세요: https://visualstudio.microsoft.com/visual-cpp-build-tools/" -ForegroundColor Red
+            return $false
+        }
+        
+        # 설치 실행
+        Write-Host "Visual C++ Build Tools 설치 중... (이 과정은 다소 시간이 걸릴 수 있습니다)" -ForegroundColor Yellow
+        try {
+            # C++ 빌드 도구 설치 (자동 모드)
+            Start-Process -FilePath "temp\vs_BuildTools.exe" -ArgumentList "--quiet", "--wait", "--norestart", "--nocache", `
+                "--installPath `"C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools`"", `
+                "--add Microsoft.VisualStudio.Workload.VCTools", `
+                "--includeRecommended" -Wait
+            
+            Write-Host "Visual C++ Build Tools 설치가 완료되었습니다!" -ForegroundColor Green
+            return $true
+        } catch {
+            Write-Host "Visual C++ Build Tools 설치 중 오류가 발생했습니다." -ForegroundColor Red
+            Write-Host "수동으로 설치해주세요: https://visualstudio.microsoft.com/visual-cpp-build-tools/" -ForegroundColor Red
+            return $false
+        }
+    } else {
+        Write-Host "Visual C++ Build Tools 설치를 건너뜁니다." -ForegroundColor Yellow
+        Write-Host "webrtcvad 모듈 설치 시 오류가 발생할 수 있으며, VAD 기능을 사용할 수 없게 됩니다." -ForegroundColor Yellow
+        return $false
+    }
+}
+
 # 관리자 권한으로 실행 시 원래 디렉토리로 이동
 if ($OriginalPath) {
     try {
@@ -169,9 +214,19 @@ if (-not $installationCompleted) {
         Start-Process -FilePath "temp\python_installer.exe" -ArgumentList "/quiet", "InstallAllUsers=1", "PrependPath=1", "Include_test=0", "Include_pip=1" -Wait
         
         Write-Host "파이썬 설치가 완료되었습니다!" -ForegroundColor Green
-        Write-Host "PowerShell을 재시작하여 환경 변수를 새로고침해야 합니다." -ForegroundColor Yellow
-        Write-Host "PowerShell을 재시작한 후 이 스크립트를 다시 실행해주세요." -ForegroundColor Yellow
-        Read-Host "아무 키나 눌러 종료하세요..."
+        Write-Host "환경 변수를 갱신하고 스크립트를 다시 실행합니다..." -ForegroundColor Yellow
+        
+        # 환경 변수 갱신
+        $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
+        
+        # 현재 스크립트 경로와 작업 디렉토리 가져오기
+        $scriptPath = $MyInvocation.MyCommand.Definition
+        $currentPath = (Get-Location).Path
+        
+        # 스크립트 재실행
+        Start-Process PowerShell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`" -Elevated -OriginalPath `"$currentPath`"" -Verb RunAs -Wait
+        
+        # 현재 프로세스 종료
         exit
     }
 
@@ -210,6 +265,9 @@ if (-not $installationCompleted) {
 
     # pip 업그레이드 및 필요한 패키지 설치
     if (-not $packagesInstalled) {
+        # Visual C++ Build Tools 설치 확인 (webrtcvad에 필요)
+        $buildToolsInstalled = Install-BuildTools
+        
         # pip 업그레이드
         Write-Host "pip를 최신 버전으로 업그레이드합니다..." -ForegroundColor Yellow
         try {
@@ -221,9 +279,20 @@ if (-not $installationCompleted) {
         # 필요한 패키지 설치
         Write-Host "필요한 패키지를 설치합니다..." -ForegroundColor Yellow
         try {
-            # 먼저 PyTorch를 CUDA 버전으로 직접 설치
-            & pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cu121
-            & pip install -r requirements.txt
+            # webrtcvad 설치 여부 결정
+            $installCommand = ""
+            if ($buildToolsInstalled) {
+                # 모든 패키지 설치 (webrtcvad 포함)
+                $installCommand = "pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cu121 && pip install -r requirements.txt"
+            } else {
+                # webrtcvad를 제외하고 설치
+                $tempReqFile = "temp_requirements.txt"
+                Get-Content -Path "requirements.txt" | Where-Object { $_ -notmatch "webrtcvad" } | Set-Content -Path $tempReqFile
+                $installCommand = "pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cu121 && pip install -r $tempReqFile"
+            }
+            
+            & cmd /c "$installCommand"
+            
             if ($LASTEXITCODE -eq 0) {
                 Write-Host "패키지 설치가 완료되었습니다." -ForegroundColor Green
                 "Packages installed on $(Get-Date)" | Out-File -FilePath "requirements_installed"
