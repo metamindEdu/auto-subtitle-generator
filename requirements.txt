@@ -1,7 +1,5 @@
-# GPU 관련 패키지는 설치 과정에서 별도로 설치
 # --extra-index-url https://download.pytorch.org/whl/cu121
 # torch==2.5.1
-# intel-extension-for-pytorch
 openai-whisper
 numpy==1.24.3
 openai

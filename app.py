@@ -24,51 +24,35 @@ load_dotenv()
 warnings.filterwarnings("ignore", message="FP16 is not supported on CPU; using FP32 instead")
 warnings.filterwarnings("ignore", category=FutureWarning)
 
-# Intel Extension for PyTorch 감지 및 사용
-def check_intel_extension():
-    """Intel Extension for PyTorch 가용성 확인"""
-    try:
-        import intel_extension_for_pytorch as ipex
-        
-        # xpu 장치 확인
-        if hasattr(ipex, 'xpu') and hasattr(ipex.xpu, 'is_available'):
-            return ipex.xpu.is_available(), ipex
-        return False, None
-    except ImportError:
-        return False, None
-
 def check_gpu_status():
-    """GPU 감지 및 사용 상태를 확인하는 함수 (NVIDIA 및 Intel 지원)"""
+    """GPU 감지 및 사용 상태를 확인하는 함수"""
     gpu_info = {
-        "is_available": False,
-        "device_count": 0,
+        "is_available": torch.cuda.is_available(),
+        "device_count": torch.cuda.device_count() if torch.cuda.is_available() else 0,
         "current_device": None,
         "device_name": None,
         "memory_allocated": None,
         "memory_reserved": None,
-        "memory_total": None,
-        "gpu_type": None  # NVIDIA 또는 Intel 구분
+        "memory_total": None
     }
     
-    # NVIDIA GPU 체크
-    if torch.cuda.is_available():
-        gpu_info["is_available"] = True
-        gpu_info["device_count"] = torch.cuda.device_count()
-        gpu_info["current_device"] = torch.cuda.current_device()
-        gpu_info["device_name"] = torch.cuda.get_device_name(gpu_info["current_device"])
-        gpu_info["gpu_type"] = "NVIDIA"
+    if gpu_info["is_available"]:
+        current_device = torch.cuda.current_device()
+        gpu_info["current_device"] = current_device
+        gpu_info["device_name"] = torch.cuda.get_device_name(current_device)
         
-        # 메모리 정보 (NVIDIA용)
+        # 단위 변환 함수 (바이트 -> GB)
         def bytes_to_gb(bytes_value):
             return round(bytes_value / (1024**3), 2)
         
         try:
-            gpu_info["memory_allocated"] = bytes_to_gb(torch.cuda.memory_allocated(gpu_info["current_device"]))
-            gpu_info["memory_reserved"] = bytes_to_gb(torch.cuda.memory_reserved(gpu_info["current_device"]))
+            gpu_info["memory_allocated"] = bytes_to_gb(torch.cuda.memory_allocated(current_device))
+            gpu_info["memory_reserved"] = bytes_to_gb(torch.cuda.memory_reserved(current_device))
             
-            # NVIDIA-SMI 정보 확인 (Windows 전용)
+            # 전체 VRAM 용량 확인 (Windows 전용)
             if os.name == 'nt':
                 try:
+                    # nvidia-smi 명령어 실행
                     import subprocess
                     result = subprocess.check_output(['nvidia-smi', '--query-gpu=memory.total', '--format=csv,noheader,nounits'], 
                                                universal_newlines=True)
@@ -79,36 +63,10 @@ def check_gpu_status():
             else:
                 gpu_info["memory_total"] = "확인 불가"
         except:
+            # 메모리 정보를 가져올 수 없는 경우
             gpu_info["memory_allocated"] = "확인 불가"
             gpu_info["memory_reserved"] = "확인 불가"
             gpu_info["memory_total"] = "확인 불가"
-    
-    # Intel GPU 체크 (Intel Extension for PyTorch가 설치된 경우)
-    else:
-        # 정확한 버전으로 설치된 Intel Extension 확인
-        is_intel_available, ipex = check_intel_extension()
-        
-        if is_intel_available:
-            gpu_info["is_available"] = True
-            gpu_info["device_count"] = ipex.xpu.device_count() if hasattr(ipex.xpu, 'device_count') else 1
-            gpu_info["current_device"] = 0  # Intel은 보통 하나의 디바이스만 인식
-            gpu_info["device_name"] = "Intel Arc GPU"  # 구체적 모델명은 API로 가져오기 어려움
-            gpu_info["gpu_type"] = "Intel"
-            
-            # Intel GPU 메모리 정보 (제한적으로 제공)
-            try:
-                if hasattr(ipex.xpu, 'memory_allocated'):
-                    allocated = ipex.xpu.memory_allocated() / (1024**3)
-                    gpu_info["memory_allocated"] = round(allocated, 2)
-                else:
-                    gpu_info["memory_allocated"] = "API 없음"
-                    
-                gpu_info["memory_reserved"] = "Intel API 미지원"
-                gpu_info["memory_total"] = "Intel API 미지원"
-            except:
-                gpu_info["memory_allocated"] = "확인 불가"
-                gpu_info["memory_reserved"] = "확인 불가"
-                gpu_info["memory_total"] = "확인 불가"
     
     return gpu_info
 
@@ -119,19 +77,19 @@ def display_gpu_info():
     # GPU 사용 가능 여부에 따라 다른 색상 및 메시지 표시
     if gpu_info["is_available"]:
         st.success("🎮 GPU 감지됨!")
-        st.write(f"**모델**: {gpu_info['device_name']}")
         
         # GPU 정보 표시
         col1, col2 = st.columns(2)
         
         with col1:
             st.metric("감지된 GPU 수", gpu_info["device_count"])
+            st.write(f"**모델**: {gpu_info['device_name']}")
         
         with col2:
-            # if isinstance(gpu_info["memory_allocated"], (int, float)):
-            #     st.metric("사용 중인 VRAM", f"{gpu_info['memory_allocated']} GB")
-            # else:
-            #     st.write("**사용 중인 VRAM**: 확인 불가")
+            if isinstance(gpu_info["memory_allocated"], (int, float)):
+                st.metric("사용 중인 VRAM", f"{gpu_info['memory_allocated']} GB")
+            else:
+                st.write("**사용 중인 VRAM**: 확인 불가")
                 
             if isinstance(gpu_info["memory_total"], (int, float)):
                 st.metric("전체 VRAM", f"{round(gpu_info['memory_total'], 1)} GB")
@@ -289,31 +247,7 @@ class PromptManager:
 class SubtitleGenerator:
     def __init__(self, model_size="small", llm_provider=None):
         with st.spinner("Whisper 모델 로딩 중..."):
-            # GPU 타입 확인
-            gpu_info = check_gpu_status()
-            
-            # 모델 로드
             self.model = whisper.load_model(model_size)
-            
-            # Intel GPU 사용 설정 (Intel Extension for PyTorch 사용)
-            if gpu_info["is_available"] and gpu_info["gpu_type"] == "Intel":
-                # 정확한 버전으로 설치된 Intel Extension 확인
-                is_intel_available, ipex = check_intel_extension()
-                
-                if is_intel_available:
-                    try:
-                        # Intel XPU로 모델 최적화
-                        if hasattr(ipex, 'optimize') and callable(ipex.optimize):
-                            self.model = ipex.optimize(self.model)
-                        # 또는 device를 xpu로 설정
-                        if hasattr(ipex.xpu, 'device'):
-                            device = ipex.xpu.device()
-                            self.model = self.model.to(device)
-                        st.success("Intel GPU 가속 활성화됨!")
-                    except (AttributeError, RuntimeError) as e:
-                        st.warning(f"Intel GPU 최적화 실패: {str(e)}")
-                        st.info("CPU 모드로 계속합니다.")
-
         st.success("모델 로딩 완료!")
 
         self.llm_provider = llm_provider
@@ -896,7 +830,7 @@ def main():
     with st.sidebar:
         st.title("⚙️ 설정")
 
-        with st.expander("🖥️ 하드웨어 정보", expanded=False):
+        with st.expander("🖥️ 하드웨어 정보", expanded=True):
             display_gpu_info()
 
         if torch.cuda.is_available():
