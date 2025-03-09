@@ -534,103 +534,237 @@ class SubtitleGenerator:
                     
                 result = self.model.transcribe(segment_audio, **transcribe_options)
                 
-                # 세그먼트 시간 조정
+                # 세그먼트 시간 조정 및 정보 저장
                 for segment in result["segments"]:
-                    segment["start"] = start + segment["start"]
-                    segment["end"] = start + segment["end"]
-                    all_segments.append(segment)
-            
+                    adj_segment = {
+                        "start": start + segment["start"],
+                        "end": start + segment["end"],
+                        "text": segment["text"].strip(),
+                        "processed": False  # 이 세그먼트가 처리되었는지 표시
+                    }
+                    all_segments.append(adj_segment)
+
             status_text.text("음성 인식 완료!")
             progress_bar.progress(60)
-            
+
             # 자막 파일 생성
             status_text.text("자막 파일 생성 중...")
             subs = pysrt.SubRipFile()
             subtitle_index = 1
-            
-            # 전체 세그먼트 수
-            total_segments = len(all_segments)
-            
-            # 자막 생성
-            for i, segment in enumerate(all_segments):
-                # 이전/다음 자막 컨텍스트 수집
-                previous_subs = [seg["text"].strip() for seg in all_segments[max(0, i-2):i]]
-                next_subs = [seg["text"].strip() for seg in all_segments[i+1:i+3]]
-                
-                # 진행률 업데이트
-                if self.llm_client:
-                    segment_progress = 20 + ((i / total_segments) * 70)
-                else:
-                    segment_progress = 20 + ((i / total_segments) * 40)
 
-                progress_bar.progress(int(segment_progress))
+            # 중복 방지를 위한 전처리
+            # 인접한 세그먼트 간의 텍스트 유사성 확인 및 중복 제거
+            for i in range(1, len(all_segments)):
+                curr_segment = all_segments[i]
+                prev_segment = all_segments[i-1]
                 
-                # LLM으로 자막 교정
-                if self.llm_client:
-                    status_text.text(f"자막 교정 중... ({i+1}/{total_segments})")
-                    
-                    text = self.correct_subtitle_with_llm(
-                        segment["text"].strip(), context, previous_subs, next_subs
-                    )
-                    
-                    # 로그 업데이트 및 화면 갱신
-                    self._update_correction_log_display(log_placeholder)
-                else:
-                    text = segment["text"].strip()
+                # 이전 세그먼트의 텍스트가 현재 세그먼트에 포함되어 있는지 확인
+                prev_text = prev_segment["text"]
+                curr_text = curr_segment["text"]
                 
-                if not text:  # 빈 텍스트는 건너뛰기
+                # 단어 단위 중복 확인 (더 정확한 중복 탐지)
+                prev_words = prev_text.split()
+                for j in range(min(5, len(prev_words))):  # 최대 5개 단어까지만 확인
+                    # 이전 텍스트의 마지막 몇 개의 단어들을 조합
+                    check_phrase = ' '.join(prev_words[-(j+1):])
+                    if check_phrase and check_phrase in curr_text and len(check_phrase) > 5:
+                        # 중복된 부분 제거
+                        curr_segment["text"] = curr_text.replace(check_phrase, '', 1).strip()
+                        break
+
+            # 텍스트 분할 및 자막 생성
+            for segment in all_segments:
+                if not segment["text"]:  # 빈 텍스트는 건너뛰기
                     continue
                 
-                # 시간 정보 추출
+                text = segment["text"]
                 start_time = segment["start"]
                 end_time = segment["end"]
                 duration = end_time - start_time
                 
                 # 최대 시간 길이 체크
                 if max_duration and duration > max_duration:
-                    # 디버깅 정보 추가
-                    status_text.text(f"긴 자막 분할: {duration:.2f}초 > {max_duration:.2f}초")
-                    
                     # 시간 간격으로 분할
                     num_splits = int(np.ceil(duration / max_duration))
                     sub_duration = duration / num_splits
                     
-                    # 텍스트를 단어 단위로 분할하여 시간에 맞게 재분배
-                    words = text.split()
-                    words_per_split = len(words) // num_splits
+                    # 텍스트를 글자 수에 비례하여 공정하게 분할
                     splits = []
                     
-                    for j in range(num_splits):
-                        sub_start = start_time + (j * sub_duration)
-                        sub_end = sub_start + sub_duration if j < num_splits - 1 else end_time
-                        
-                        if j == num_splits - 1:
-                            # 마지막 분할은 남은 모든 단어 사용
-                            sub_words = words[j * words_per_split:]
+                    # 텍스트를 문장 단위로 분할 (더 자연스러운 분할 지점)
+                    sentence_breaks = re.split(r'([.!?] )', text)
+                    sentences = []
+                    
+                    # 문장 재구성 (구분자 포함)
+                    i = 0
+                    while i < len(sentence_breaks):
+                        if i + 1 < len(sentence_breaks) and re.match(r'[.!?] ', sentence_breaks[i+1]):
+                            sentences.append(sentence_breaks[i] + sentence_breaks[i+1])
+                            i += 2
                         else:
-                            # 단어 단위로 분할
-                            start_idx = j * words_per_split
-                            end_idx = (j + 1) * words_per_split
-                            sub_words = words[start_idx:end_idx]
+                            sentences.append(sentence_breaks[i])
+                            i += 1
+                    
+                    # 빈 문장 제거
+                    sentences = [s for s in sentences if s.strip()]
+                    
+                    if not sentences:  # 문장이 없으면 단어 단위로 분할
+                        words = text.split()
+                        chars_per_split = len(text) / num_splits
+                        current_split = []
+                        current_length = 0
                         
-                        sub_text = ' '.join(sub_words).strip()
-                        if sub_text:  # 빈 텍스트가 아닌 경우만 추가
-                            splits.append((sub_start, sub_end, sub_text))
+                        for word in words:
+                            if current_length + len(word) + (1 if current_length > 0 else 0) <= chars_per_split:
+                                current_split.append(word)
+                                current_length += len(word) + (1 if current_length > 0 else 0)
+                            else:
+                                if current_split:  # 현재 분할을 추가
+                                    splits.append(' '.join(current_split))
+                                current_split = [word]
+                                current_length = len(word)
+                        
+                        if current_split:  # 마지막 분할 추가
+                            splits.append(' '.join(current_split))
+                    else:
+                        # 문장을 적절히 그룹화하여 분할
+                        current_split = []
+                        current_length = 0
+                        target_length = len(text) / num_splits
+                        
+                        for sentence in sentences:
+                            if current_length + len(sentence) <= target_length * 1.3:  # 30% 여유 허용
+                                current_split.append(sentence)
+                                current_length += len(sentence)
+                            else:
+                                if current_split:
+                                    splits.append(''.join(current_split).strip())
+                                current_split = [sentence]
+                                current_length = len(sentence)
+                        
+                        if current_split:
+                            splits.append(''.join(current_split).strip())
+                    
+                    # 필요한 경우 분할 수 맞추기
+                    while len(splits) < num_splits:
+                        # 가장 긴 분할을 찾아 분할
+                        longest_idx = max(range(len(splits)), key=lambda i: len(splits[i]))
+                        longest_split = splits[longest_idx]
+                        
+                        if len(longest_split) < 10:  # 너무 짧으면 분할하지 않음
+                            break
+                            
+                        mid_point = len(longest_split) // 2
+                        # 공백을 찾아 분할점 조정
+                        while mid_point > 0 and mid_point < len(longest_split) - 1:
+                            if longest_split[mid_point] == ' ':
+                                break
+                            mid_point += 1
+                            
+                        if mid_point == 0 or mid_point >= len(longest_split) - 1:
+                            # 적절한 분할점을 찾지 못하면 그냥 중간에서 자름
+                            mid_point = len(longest_split) // 2
+                        
+                        first_half = longest_split[:mid_point].strip()
+                        second_half = longest_split[mid_point:].strip()
+                        
+                        splits[longest_idx] = first_half
+                        splits.insert(longest_idx + 1, second_half)
+                    
+                    # 시간 분배
+                    current_time = start_time
+                    for split_text in splits:
+                        split_ratio = len(split_text) / sum(len(s) for s in splits)
+                        split_duration = duration * split_ratio
+                        split_end = current_time + split_duration
+                        
+                        if max_chars and len(split_text) > max_chars:
+                            # 글자 수가 너무 많으면 추가 분할 (단어 경계 유지)
+                            words = split_text.split()
+                            current_chunk = ""
+                            chunks = []
+                            
+                            for word in words:
+                                test_chunk = (current_chunk + " " + word).strip()
+                                if len(test_chunk) <= max_chars:
+                                    current_chunk = test_chunk
+                                else:
+                                    if current_chunk:
+                                        chunks.append(current_chunk)
+                                    current_chunk = word
+                            
+                            if current_chunk:
+                                chunks.append(current_chunk)
+                            
+                            # 분할된 청크에 시간 배분
+                            chunk_time = current_time
+                            chunk_duration = split_duration / len(chunks)
+                            for chunk in chunks:
+                                chunk_end = chunk_time + chunk_duration
+                                
+                                # 자막 아이템 생성 및 추가
+                                hours = int(chunk_time) // 3600
+                                minutes = (int(chunk_time) % 3600) // 60
+                                seconds = int(chunk_time) % 60
+                                milliseconds = int((chunk_time % 1) * 1000)
+                                start_time_item = pysrt.SubRipTime(hours=hours, minutes=minutes, 
+                                                        seconds=seconds, milliseconds=milliseconds)
+                                
+                                hours = int(chunk_end) // 3600
+                                minutes = (int(chunk_end) % 3600) // 60
+                                seconds = int(chunk_end) % 60
+                                milliseconds = int((chunk_end % 1) * 1000)
+                                end_time_item = pysrt.SubRipTime(hours=hours, minutes=minutes, 
+                                                    seconds=seconds, milliseconds=milliseconds)
+                                
+                                sub = pysrt.SubRipItem(
+                                    index=subtitle_index,
+                                    start=start_time_item,
+                                    end=end_time_item,
+                                    text=chunk
+                                )
+                                subs.append(sub)
+                                subtitle_index += 1
+                                
+                                chunk_time = chunk_end
+                        else:
+                            # 최대 글자 수 이내인 경우 단일 자막으로 추가
+                            hours = int(current_time) // 3600
+                            minutes = (int(current_time) % 3600) // 60
+                            seconds = int(current_time) % 60
+                            milliseconds = int((current_time % 1) * 1000)
+                            start_time_item = pysrt.SubRipTime(hours=hours, minutes=minutes, 
+                                                    seconds=seconds, milliseconds=milliseconds)
+                            
+                            hours = int(split_end) // 3600
+                            minutes = (int(split_end) % 3600) // 60
+                            seconds = int(split_end) % 60
+                            milliseconds = int((split_end % 1) * 1000)
+                            end_time_item = pysrt.SubRipTime(hours=hours, minutes=minutes, 
+                                                seconds=seconds, milliseconds=milliseconds)
+                            
+                            sub = pysrt.SubRipItem(
+                                index=subtitle_index,
+                                start=start_time_item,
+                                end=end_time_item,
+                                text=split_text
+                            )
+                            subs.append(sub)
+                            subtitle_index += 1
+                        
+                        current_time = split_end
                 else:
-                    splits = [(start_time, end_time, text)]
-                
-                # 최대 글자 수 제한 처리
-                final_splits = []
-                for sub_start, sub_end, sub_text in splits:
-                    if max_chars and len(sub_text) > max_chars:
-                        # 텍스트를 최대 글자 수로 분할
-                        words = sub_text.split()
+                    # 최대 시간 이내인 경우 최대 글자 수에 따라 처리
+                    if max_chars and len(text) > max_chars:
+                        # 단어 단위로 분할
+                        words = text.split()
                         current_text = ""
                         sub_splits = []
                         
                         for word in words:
-                            if len(current_text) + len(word) + 1 <= max_chars:
-                                current_text += (" " + word if current_text else word)
+                            test_text = (current_text + " " + word).strip()
+                            if len(test_text) <= max_chars:
+                                current_text = test_text
                             else:
                                 if current_text:
                                     sub_splits.append(current_text)
@@ -640,41 +774,59 @@ class SubtitleGenerator:
                             sub_splits.append(current_text)
                         
                         # 시간을 텍스트 길이에 비례하여 분배
-                        sub_duration = sub_end - sub_start
+                        sub_duration = end_time - start_time
                         total_chars = sum(len(s) for s in sub_splits)
-                        current_time = sub_start
+                        current_time = start_time
                         
                         for sub_text in sub_splits:
                             ratio = len(sub_text) / total_chars
                             split_duration = sub_duration * ratio
                             split_end = current_time + split_duration
                             
-                            final_splits.append((current_time, split_end, sub_text))
+                            hours = int(current_time) // 3600
+                            minutes = (int(current_time) % 3600) // 60
+                            seconds = int(current_time) % 60
+                            milliseconds = int((current_time % 1) * 1000)
+                            start_time_item = pysrt.SubRipTime(hours=hours, minutes=minutes, 
+                                                    seconds=seconds, milliseconds=milliseconds)
+                            
+                            hours = int(split_end) // 3600
+                            minutes = (int(split_end) % 3600) // 60
+                            seconds = int(split_end) % 60
+                            milliseconds = int((split_end % 1) * 1000)
+                            end_time_item = pysrt.SubRipTime(hours=hours, minutes=minutes, 
+                                                seconds=seconds, milliseconds=milliseconds)
+                            
+                            sub = pysrt.SubRipItem(
+                                index=subtitle_index,
+                                start=start_time_item,
+                                end=end_time_item,
+                                text=sub_text
+                            )
+                            subs.append(sub)
+                            subtitle_index += 1
+                            
                             current_time = split_end
                     else:
-                        final_splits.append((sub_start, sub_end, sub_text))
-                
-                # 자막 생성
-                for start, end, text in final_splits:
-                    if text.strip():
-                        hours = int(start) // 3600
-                        minutes = (int(start) % 3600) // 60
-                        seconds = int(start) % 60
-                        milliseconds = int((start % 1) * 1000)
-                        start_time = pysrt.SubRipTime(hours=hours, minutes=minutes, 
-                                                    seconds=seconds, milliseconds=milliseconds)
-                        
-                        hours = int(end) // 3600
-                        minutes = (int(end) % 3600) // 60
-                        seconds = int(end) % 60
-                        milliseconds = int((end % 1) * 1000)
-                        end_time = pysrt.SubRipTime(hours=hours, minutes=minutes, 
+                        # 그대로 추가
+                        hours = int(start_time) // 3600
+                        minutes = (int(start_time) % 3600) // 60
+                        seconds = int(start_time) % 60
+                        milliseconds = int((start_time % 1) * 1000)
+                        start_time_item = pysrt.SubRipTime(hours=hours, minutes=minutes, 
                                                 seconds=seconds, milliseconds=milliseconds)
+                        
+                        hours = int(end_time) // 3600
+                        minutes = (int(end_time) % 3600) // 60
+                        seconds = int(end_time) % 60
+                        milliseconds = int((end_time % 1) * 1000)
+                        end_time_item = pysrt.SubRipTime(hours=hours, minutes=minutes, 
+                                            seconds=seconds, milliseconds=milliseconds)
                         
                         sub = pysrt.SubRipItem(
                             index=subtitle_index,
-                            start=start_time,
-                            end=end_time,
+                            start=start_time_item,
+                            end=end_time_item,
                             text=text
                         )
                         subs.append(sub)
