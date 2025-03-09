@@ -2,7 +2,8 @@
 
 음성 또는 영상 파일에서 자동으로 자막을 생성하고, 선택적으로 LLM(대규모 언어 모델)을 사용하여 자막을 교정하는 도구입니다.
 
-![자동 자막 생성기 스크린샷](./screenshot.png)
+[![자동 자막 생성기 데모](https://img.youtube.com/vi/ylGXAXliyjE/mqdefault.jpg)](https://youtu.be/ylGXAXliyjE)
+*클릭하면 YouTube로 이동합니다*
 
 ## 자막 생성 과정
 
@@ -21,6 +22,8 @@
 - **다운로드 지원**: SRT 및 VTT 형식으로 자막 다운로드
 - **LLM 교정**: OpenAI 또는 Anthropic Claude API를 활용한 자막 교정 기능(옵션)
 - **VAD(Voice Activity Detection)**: 음성이 있는 부분만 감지하여 처리하는 기능(옵션). OpenAI Whisper 모델의 잘 알려진 버그로 인해 음성 공백 구간이 긴 영상 및 음성 파일을 처리할 때 특히 유용
+
+![자동 자막 생성기 스크린샷](./screenshot.png)
 
 ## 시스템 요구사항
 
@@ -184,3 +187,11 @@ ANTHROPIC_API_KEY=your_anthropic_api_key_here
 ## 기여
 
 이슈 및 풀 리퀘스트를 환영합니다. 기여하기 전에 이슈를 통해 변경 사항을 논의해주세요.
+
+## 제작 정보
+
+이 프로그램은 [메타마인드](https://metamind.kr)가 제작하였으며, 자유로운 수정 및 공유가 가능합니다.
+
+---
+
+© 2025 메타마인드 | [https://metamind.kr](https://metamind.kr)
