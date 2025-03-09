@@ -351,7 +351,7 @@ class SubtitleGenerator:
         
         return merged
 
-    def correct_subtitle_with_llm(self, subtitle_text, context=None, previous_subs=None, next_subs=None, is_first=False):
+    def correct_subtitle_with_llm(self, subtitle_text, context=None, previous_subs=None, next_subs=None):
         """LLM을 사용하여 자막 텍스트를 교정"""
         if not self.llm_client:
             return subtitle_text
@@ -363,32 +363,6 @@ class SubtitleGenerator:
                 st.session_state.correction_logs = []
             st.session_state.correction_logs.append(log_entry)
             
-            # 이전 자막 중복 검사 - 첫 몇 개 자막에서만 수행
-            # 초반 자막들은 중복 가능성이 높으므로 확인
-            if is_first and previous_subs:
-                # 현재 자막과 이전 자막 간 중복 확인
-                for prev_sub in previous_subs:
-                    # 이전 자막이 현재 자막의 시작 부분과 일치하는지 확인
-                    if subtitle_text.startswith(prev_sub) and len(prev_sub) > 5:
-                        # 중복된 부분 제거
-                        subtitle_text = subtitle_text[len(prev_sub):].strip()
-                        log_entry = f"중복 제거 후: {subtitle_text}"
-                        st.session_state.correction_logs.append(log_entry)
-                        break
-                    
-                    # 부분 일치 검사 (더 정확한 중복 검출)
-                    if len(prev_sub) > 10:
-                        prev_words = prev_sub.split()
-                        if len(prev_words) >= 3:
-                            # 이전 자막의 마지막 몇 개 단어
-                            last_words = ' '.join(prev_words[-3:])
-                            if subtitle_text.startswith(last_words):
-                                subtitle_text = subtitle_text[len(last_words):].strip()
-                                log_entry = f"부분 중복 제거 후: {subtitle_text}"
-                                st.session_state.correction_logs.append(log_entry)
-                                break
-            
-            # LLM 교정 수행
             if self.llm_provider == "openai":
                 response = self.llm_client.chat.completions.create(
                     model="gpt-4o-mini",
@@ -575,84 +549,31 @@ class SubtitleGenerator:
 
             # LLM 교정 처리
             if self.llm_client:
-                status_text.text("자막 교정 준비 중...")
+                status_text.text("LLM 자막 교정 시작...")
                 
-                # 처음 몇 개의 세그먼트를 특별히 처리
-                # all_segments 리스트가 시간순으로 정렬되어 있어야 함
-                all_segments.sort(key=lambda s: s["start"])
-                
-                # 중복 방지를 위한 전처리 - 인접한 세그먼트 간의 텍스트 유사성 확인
-                for i in range(1, len(all_segments)):
-                    curr_segment = all_segments[i]
-                    prev_segment = all_segments[i-1]
-                    
-                    # 시간 간격이 가까운 경우만 중복 검사 (3초 이내)
-                    time_gap = curr_segment["start"] - prev_segment["end"]
-                    if time_gap <= 3.0:
-                        prev_text = prev_segment["text"]
-                        curr_text = curr_segment["text"]
-                        
-                        # 단어 단위 중복 확인
-                        prev_words = prev_text.split()
-                        # 최대 5개 단어까지만 확인 (이전 텍스트의 마지막 부분만)
-                        for j in range(min(5, len(prev_words))):
-                            check_phrase = ' '.join(prev_words[-(j+1):])
-                            if len(check_phrase) > 5 and check_phrase in curr_text:
-                                # 중복된 부분 제거 (첫 번째 발견된 인스턴스만)
-                                curr_segment["text"] = curr_text.replace(check_phrase, '', 1).strip()
-                                break
-                
-                # LLM 교정 수행
-                status_text.text("LLM으로 자막 교정 중...")
-                corrected_segments = []
+                # 전체 세그먼트 수
                 total_segments = len(all_segments)
                 
                 for i, segment in enumerate(all_segments):
-                    if not segment["text"].strip():  # 빈 텍스트는 건너뛰기
-                        continue
-                        
-                    # 이전/다음 자막 컨텍스트 수집
-                    previous_subs = []
-                    # 이전 교정된 자막들 사용 (더 정확한 컨텍스트 제공)
-                    for j in range(max(0, i-3), i):
-                        if j < len(corrected_segments):
-                            previous_subs.append(corrected_segments[j])
-                    
-                    # 다음 자막은 원본 사용
-                    next_subs = []
-                    for j in range(i+1, min(i+3, total_segments)):
-                        next_sub_text = all_segments[j]["text"].strip()
-                        if next_sub_text:
-                            next_subs.append(next_sub_text)
+                    # 이전/다음 자막 컨텍스트 수집 (최대 2개씩)
+                    previous_texts = [all_segments[j]["text"] for j in range(max(0, i-2), i)]
+                    next_texts = [all_segments[j]["text"] for j in range(i+1, min(len(all_segments), i+3))]
                     
                     # 진행률 업데이트
-                    segment_progress = 60 + (i / total_segments * 30)
+                    segment_progress = 60 + ((i / total_segments) * 30)
                     progress_bar.progress(int(segment_progress))
                     
-                    # 자막 교정
+                    # LLM으로 자막 교정
                     status_text.text(f"자막 교정 중... ({i+1}/{total_segments})")
                     
-                    # 첫 5개 세그먼트는 특별 처리 플래그 전달
-                    is_first_segment = i < 5
-                    
-                    corrected_text = self.correct_subtitle_with_llm(
-                        segment["text"], 
-                        context, 
-                        previous_subs, 
-                        next_subs,
-                        is_first=is_first_segment
+                    segment["text"] = self.correct_subtitle_with_llm(
+                        segment["text"], context, previous_texts, next_texts
                     )
-                    
-                    # 교정된 자막 저장
-                    corrected_segments.append(corrected_text)
-                    segment["text"] = corrected_text
                     
                     # 로그 업데이트 및 화면 갱신
                     self._update_correction_log_display(log_placeholder)
-                
-                status_text.text("자막 교정 완료!")
 
-            # 자막 파일 생성 부분은 그대로 유지
+            # 자막 파일 생성
             status_text.text("자막 파일 생성 중...")
             subs = pysrt.SubRipFile()
             subtitle_index = 1
