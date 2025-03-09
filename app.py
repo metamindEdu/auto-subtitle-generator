@@ -547,30 +547,36 @@ class SubtitleGenerator:
             status_text.text("음성 인식 완료!")
             progress_bar.progress(60)
 
+            # LLM 교정 처리
+            if self.llm_client:
+                status_text.text("LLM 자막 교정 시작...")
+                
+                # 전체 세그먼트 수
+                total_segments = len(all_segments)
+                
+                for i, segment in enumerate(all_segments):
+                    # 이전/다음 자막 컨텍스트 수집 (최대 2개씩)
+                    previous_texts = [all_segments[j]["text"] for j in range(max(0, i-2), i)]
+                    next_texts = [all_segments[j]["text"] for j in range(i+1, min(len(all_segments), i+3))]
+                    
+                    # 진행률 업데이트
+                    segment_progress = 60 + ((i / total_segments) * 30)
+                    progress_bar.progress(int(segment_progress))
+                    
+                    # LLM으로 자막 교정
+                    status_text.text(f"자막 교정 중... ({i+1}/{total_segments})")
+                    
+                    segment["text"] = self.correct_subtitle_with_llm(
+                        segment["text"], context, previous_texts, next_texts
+                    )
+                    
+                    # 로그 업데이트 및 화면 갱신
+                    self._update_correction_log_display(log_placeholder)
+
             # 자막 파일 생성
             status_text.text("자막 파일 생성 중...")
             subs = pysrt.SubRipFile()
             subtitle_index = 1
-
-            # 중복 방지를 위한 전처리
-            # 인접한 세그먼트 간의 텍스트 유사성 확인 및 중복 제거
-            for i in range(1, len(all_segments)):
-                curr_segment = all_segments[i]
-                prev_segment = all_segments[i-1]
-                
-                # 이전 세그먼트의 텍스트가 현재 세그먼트에 포함되어 있는지 확인
-                prev_text = prev_segment["text"]
-                curr_text = curr_segment["text"]
-                
-                # 단어 단위 중복 확인 (더 정확한 중복 탐지)
-                prev_words = prev_text.split()
-                for j in range(min(5, len(prev_words))):  # 최대 5개 단어까지만 확인
-                    # 이전 텍스트의 마지막 몇 개의 단어들을 조합
-                    check_phrase = ' '.join(prev_words[-(j+1):])
-                    if check_phrase and check_phrase in curr_text and len(check_phrase) > 5:
-                        # 중복된 부분 제거
-                        curr_segment["text"] = curr_text.replace(check_phrase, '', 1).strip()
-                        break
 
             # 텍스트 분할 및 자막 생성
             for segment in all_segments:
