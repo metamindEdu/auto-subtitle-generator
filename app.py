@@ -379,7 +379,7 @@ class SubtitleGenerator:
             elif self.llm_provider == "anthropic":
                 response = self.llm_client.messages.create(
                     model="claude-3-5-haiku-20241022",
-                    max_tokens=8000,
+                    max_tokens=1000,
                     temperature=0.3,
                     system=self.prompt_manager.system_prompt,
                     messages=[{
