@@ -925,7 +925,7 @@ def main():
         if min_chars <= 0:
             min_chars = None
             
-        max_duration = st.number_input("한 자막당 최대 시간(초)", min_value=0.0, value=5.0)
+        max_duration = st.number_input("한 자막당 최대 시간(초)", min_value=0.0, value=10.0)
         if max_duration <= 0:
             max_duration = None
         
@@ -1298,6 +1298,27 @@ def main():
                 
                 if preview_data:
                     st.dataframe(preview_data, use_container_width=True)
+
+    # 푸터 구분선
+    st.markdown("---")
+
+    # 푸터 컨테이너 생성
+    footer = st.container()
+
+    with footer:
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            st.markdown(
+                """
+                <div style="text-align: center; padding: 10px;">
+                    <p style="font-size: 0.9em; color: #666;">
+                        이 프로그램은 <a href="https://metamind.kr" target="_blank" style="color: #4B9CFF; text-decoration: none;">메타마인드</a>가 제작하였으며, 자유로운 수정 및 공유가 가능합니다.
+                    </p>
+                    <p style="font-size: 0.8em; color: #888;">© 2025 메타마인드</p>
+                </div>
+                """, 
+                unsafe_allow_html=True
+            )
 
 if __name__ == "__main__":
     main()
